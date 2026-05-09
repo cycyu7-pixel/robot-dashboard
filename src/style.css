@@ -1,0 +1,32 @@
+/**
+ * 全局基础样式 —— 机器人仪表盘
+ *
+ * 这里的样式会影响整个 App，改颜色/字体在这改就行。
+ */
+
+/* ---------- 重置浏览器默认样式 ---------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ---------- 页面基础 ---------- */
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0f0f23;
+  color: #ecf0f1;
+  font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---------- Vue 挂载点 ---------- */
+#app {
+  width: 100%;
+  height: 100%;
+}
