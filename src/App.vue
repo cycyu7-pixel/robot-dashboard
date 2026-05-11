@@ -18,7 +18,7 @@
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import RobotView3D from '@/components/RobotView3D/RobotView3D.vue'
 import Telemetry from '@/components/Telemetry/Telemetry.vue'
-import { connect, disconnect, useRosStatus, callService, subscribe } from '@/ros'
+import { connect, disconnect, useRosStatus, callService } from '@/ros'
 import { useTopics, topicData } from '@/ros/useTopics'
 import { G1_JOINT_MAPPING } from '@/models'
 import ToastContainer from '@/components/Toast/ToastContainer.vue'
