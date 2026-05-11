@@ -15,10 +15,10 @@
  * 改关节映射：去 src/models/robot.ts 的 G1_JOINT_MAPPING 表
  */
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import RobotView3D from '@/components/RobotView3D/RobotView3D.vue'
 import Telemetry from '@/components/Telemetry/Telemetry.vue'
-import { connect, disconnect, useRosStatus } from '@/ros'
+import { connect, disconnect, useRosStatus, callService, subscribe } from '@/ros'
 import { useTopics, topicData } from '@/ros/useTopics'
 import { G1_JOINT_MAPPING } from '@/models'
 import ToastContainer from '@/components/Toast/ToastContainer.vue'
@@ -83,10 +83,53 @@ function handleDisconnect(): void {
 }
 
 // ============================================================
-// 4. 清理
+// 4. 急停控制
+// ============================================================
+
+
+/** 急停状态 */
+const estopActive = ref(false)
+/** 急停轮询定时器 */
+let estopTimer: ReturnType<typeof setInterval> | null = null
+
+/** 触发急停 */
+async function handleEStop(): Promise<void> {
+  try {
+    await callService('/g1/trigger_estop', 'std_srvs/srv/Trigger', {})
+    showToast('急停已触发，机器人进入阻尼模式', 'error', 8000)
+  } catch (e: any) {
+    showToast(`急停失败：${e.message}`, 'error')
+  }
+}
+
+/** 查询急停状态 */
+async function handleQueryEStop(): Promise<void> {
+  try {
+    const res = await callService('/g1_emergency_stop_node/query_estop_state', 'std_srvs/srv/Trigger', {})
+    estopActive.value = res.estop_active === true || res.estop_active === 'true'
+  } catch (e: any) {
+    console.warn('[急停] 查询失败:', e.message)
+  }
+}
+
+/** 连接后自动开始轮询，断开自动停止 */
+watch(connected, (val) => {
+  if (val) {
+    handleQueryEStop()
+    estopTimer = setInterval(handleQueryEStop, 3000)
+  } else if (estopTimer) {
+    clearInterval(estopTimer)
+    estopTimer = null
+    estopActive.value = false
+  }
+})
+
+// ============================================================
+// 5. 清理
 // ============================================================
 
 onBeforeUnmount(() => {
+  if (estopTimer) clearInterval(estopTimer)
   disconnect()
 })
 
@@ -116,6 +159,17 @@ onBeforeUnmount(() => {
         <span class="status-dot" :class="{ on: connected }"></span>
         <span class="status-text">{{ statusText }}</span>
         <span v-if="lastError" class="error-text">（{{ lastError }}）</span>
+
+        <!-- 急停按钮（仅连接后可用） -->
+        <button
+          v-if="connected"
+          class="btn-estop"
+          :class="{ active: estopActive }"
+          @click="handleEStop"
+          title="紧急停止机器人"
+        >
+          {{ estopActive ? '⚠ 急停中' : '急停' }}
+        </button>
 
         <!-- IP 和端口输入 -->
         <input
@@ -306,6 +360,36 @@ onBeforeUnmount(() => {
 
 .btn-disconnect:hover {
   background: #c0392b;
+}
+
+/* ---------- 急停按钮 ---------- */
+.btn-estop {
+  padding: 6px 18px;
+  border: 2px solid #e74c3c;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  background: transparent;
+  color: #e74c3c;
+  transition: all 0.2s;
+  letter-spacing: 1px;
+}
+
+.btn-estop:hover {
+  background: #e74c3c;
+  color: #fff;
+}
+
+.btn-estop.active {
+  background: #e74c3c;
+  color: #fff;
+  animation: estop-blink 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes estop-blink {
+  from { box-shadow: 0 0 4px rgba(231, 76, 60, 0.4); }
+  to   { box-shadow: 0 0 16px rgba(231, 76, 60, 0.9); }
 }
 
 /* ---------- 主体 ---------- */

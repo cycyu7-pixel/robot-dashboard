@@ -184,6 +184,49 @@ export function publish(
 }
 
 // ============================================================
+// 7. 调用 Service
+// ============================================================
+
+/**
+ * 调用 ROS Service
+ *
+ * 示例（触发急停）：
+ *   callService('/g1/trigger_estop', 'std_srvs/srv/Trigger', {})
+ *     .then(res => console.log(res))
+ *
+ * @param serviceName  - Service 名称，如 '/g1/trigger_estop'
+ * @param serviceType  - Service 类型，如 'std_srvs/srv/Trigger'
+ * @param request      - 请求参数对象
+ * @returns             Promise，resolve 为响应数据
+ */
+export function callService(
+  serviceName: string,
+  serviceType: string,
+  request: object = {}
+): Promise<any> {
+  return new Promise((resolve, reject) => {
+    if (!ros) {
+      reject(new Error('[ROS] 尚未连接'))
+      return
+    }
+
+    const service = new ROSLIB.Service({
+      ros,
+      name: serviceName,
+      serviceType,
+    })
+
+    service.callService(request, (result: any) => {
+      console.log(`[ROS] Service ${serviceName} 响应:`, result)
+      resolve(result)
+    }, (error: any) => {
+      console.error(`[ROS] Service ${serviceName} 失败:`, error)
+      reject(error)
+    })
+  })
+}
+
+// ============================================================
 // 7. 获取连接状态（在 .vue 里用）
 // ============================================================
 
