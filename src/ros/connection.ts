@@ -217,7 +217,6 @@ export function callService(
     })
 
     service.callService(request, (result: any) => {
-      console.log(`[ROS] Service ${serviceName} 响应:`, result)
       resolve(result)
     }, (error: any) => {
       console.error(`[ROS] Service ${serviceName} 失败:`, error)
