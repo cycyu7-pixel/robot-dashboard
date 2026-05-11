@@ -14,6 +14,7 @@ use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer
 
 const props = defineProps<{
   motorState?: MotorState[]
+  alarmTemp?: number
 }>()
 
 const MAX_POINTS = 60
@@ -21,8 +22,6 @@ const MAX_POINTS = 60
 function motorIdx(jointName: string): number {
   return G1_MOTOR_JOINTS.indexOf(jointName)
 }
-
-const KEY_JOINTS = ['left_hip_pitch', 'right_hip_pitch', 'left_knee', 'right_knee'] as const
 
 // ============================================================
 // 历史数据
@@ -51,6 +50,8 @@ let lastSampleTime = 0
 
 /** 已触发过告警的关节（去重，温度回落自动清除） */
 const alertedJoints = new Set<string>()
+/** 报警阈值，默认 70℃ */
+const threshold = computed(() => props.alarmTemp ?? 70)
 
 watch(() => props.motorState, (motors) => {
   if (!motors || motors.length === 0) return
@@ -77,7 +78,7 @@ watch(() => props.motorState, (motors) => {
   })
 
   // 电压
-  const vols = motors.filter(m => m.mode === 1).map(m => m.vol ?? 0)
+  const vols = motors.filter(m => m.mode === 0 || m.mode === 1).map(m => m.vol ?? 0)
   push(voltHistory, {
     time: t,
     min: vols.length ? Math.min(...vols) : 0,
@@ -88,15 +89,15 @@ watch(() => props.motorState, (motors) => {
   // 温度检查（每个关节独立告警）
   for (let i = 0; i < Math.min(motors.length, G1_MOTOR_JOINTS.length); i++) {
     const m = motors[i]
-    if (m.mode !== 1) continue
+    if (m.mode !== 0 && m.mode !== 1) continue
     const temp = m.temperature?.[0] ?? 0
     const name = G1_MOTOR_JOINTS[i]
     const display = G1_MOTOR_DISPLAY_NAMES[i] ?? name
-    if (temp > 50 && !alertedJoints.has(name)) {
+    if (temp > threshold.value && !alertedJoints.has(name)) {
       alertedJoints.add(name)
       showToast(`${display} 电机过热: ${temp.toFixed(1)}°C`, 'error', 6000)
     }
-    if (temp <= 50) {
+    if (temp <= threshold.value) {
       alertedJoints.delete(name)
     }
   }
@@ -112,9 +113,9 @@ const jointTemps = computed(() => {
   const temps: { name: string; temp: number; alert: boolean }[] = []
   for (let i = 0; i < Math.min(motors.length, G1_MOTOR_JOINTS.length); i++) {
     const m = motors[i]
-    if (m.mode !== 1) continue
+    if (m.mode !== 0 && m.mode !== 1) continue
     const t = m.temperature?.[0] ?? 0
-    temps.push({ name: G1_MOTOR_DISPLAY_NAMES[i] ?? G1_MOTOR_JOINTS[i], temp: t, alert: t > 50 })
+    temps.push({ name: G1_MOTOR_DISPLAY_NAMES[i] ?? G1_MOTOR_JOINTS[i], temp: t, alert: t > threshold.value })
   }
   return temps
 })
@@ -216,22 +217,7 @@ const voltOption = computed(() => ({
 
 <template>
   <div class="telemetry-grid">
-    <!-- 1. 下肢关节角度 -->
-    <ChartCard title="下肢关节角度" icon="🦿">
-      <VChart class="chart" :option="angleOption" autoresize />
-    </ChartCard>
-
-    <!-- 2. 关节力矩 -->
-    <ChartCard title="关节力矩" icon="💪">
-      <VChart class="chart" :option="torqueOption" autoresize />
-    </ChartCard>
-
-    <!-- 3. 电机电压 -->
-    <ChartCard title="电机电压" icon="⚡">
-      <VChart class="chart" :option="voltOption" autoresize />
-    </ChartCard>
-
-    <!-- 4. 电机温度监控 -->
+    <!-- 1. 电机温度监控（放在最前面，便于观察） -->
     <ChartCard title="电机温度" icon="🌡️">
       <div class="temp-grid">
         <div
@@ -247,6 +233,21 @@ const voltOption = computed(() => ({
           等待数据...
         </div>
       </div>
+    </ChartCard>
+
+    <!-- 2. 下肢关节角度 -->
+    <ChartCard title="下肢关节角度" icon="🦿">
+      <VChart class="chart" :option="angleOption" autoresize />
+    </ChartCard>
+
+    <!-- 3. 关节力矩 -->
+    <ChartCard title="关节力矩" icon="💪">
+      <VChart class="chart" :option="torqueOption" autoresize />
+    </ChartCard>
+
+    <!-- 4. 电机电压 -->
+    <ChartCard title="电机电压" icon="⚡">
+      <VChart class="chart" :option="voltOption" autoresize />
     </ChartCard>
 
     <!-- 5. 调试面板：原始电机 q 值（用于验证关节映射） -->

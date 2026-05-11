@@ -44,4 +44,8 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  server: {
+    host: true,        // 监听 0.0.0.0，允许局域网其他设备访问
+    allowedHosts: true, // 允许任意 Host 访问，防止手机访问时 Host 校验失败
+  },
 })

@@ -3,7 +3,7 @@ import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import * as THREE from 'three'
 import URDFLoader from 'urdf-loader'
 import type { MotorState } from '@/models'
-import { G1_MOTOR_TO_URDF_JOINT, calibrateJointValue, captureBaseline, resetCalibration, G1_MOTOR_CALIBRATION } from '@/models'
+import { G1_MOTOR_TO_URDF_JOINT, calibrateJointValue, captureBaseline, resetCalibration } from '@/models'
 import urdfXml from '@/urdf/g1_29dof_rev_1_0_with_inspire_hand_FTP.urdf?raw'
 
 const props = defineProps<{
@@ -34,8 +34,6 @@ const DIRECTIONAL = 0xffffff
 const BG = 0x0d1b2a
 const GRID = 0x1a3a5c
 const JOINT_COLOR = 0x5fa8d3
-const LINK_COLOR = 0x2c5f8a
-const TORSO_COLOR = 0x1b4965
 
 onMounted(init)
 
@@ -92,8 +90,8 @@ function loadRobot(): void {
   loader.workingPath = '/'
   robot = loader.parse(urdfXml)
 
-  // ROS Z-up → Three.js Y-up
-  robot.rotation.set(-Math.PI / 2, 0, 0)
+  // ROS Z-up → Three.js Y-up，再绕 Z 轴顺时针转 90°
+  robot.rotation.set(-Math.PI / 2, 0, -Math.PI / 2)
 
   // 活动关节加标记球
   robot.traverse((node: any) => {
@@ -103,18 +101,6 @@ function loadRobot(): void {
   })
 
   scene.add(robot)
-}
-
-/** 给 link 加一个小方块表示这段肢体 */
-function addLinkGeometry(link: any): void {
-  // 跳过已经有 visual mesh 的
-  if (link.children.some((c: any) => c.isURDFVisual)) return
-
-  const box = new THREE.Mesh(
-    new THREE.SphereGeometry(0.02, 8, 8),
-    new THREE.MeshPhongMaterial({ color: LINK_COLOR, emissive: 0x0a1a2a }),
-  )
-  link.add(box)
 }
 
 /** 给活动关节加一个明显的小球 */
@@ -136,7 +122,7 @@ watch(() => props.motorState, (motors) => {
   let found = 0
   let missing = 0
   for (let i = 0; i < Math.min(motors.length, G1_MOTOR_TO_URDF_JOINT.length); i++) {
-    if (motors[i]?.mode !== 1) continue
+    if (motors[i]?.mode !== 0 && motors[i]?.mode !== 1) continue
     const jointName = G1_MOTOR_TO_URDF_JOINT[i]
     const joint = (robot as any).joints?.[jointName]
     if (joint && joint.setJointValue) {

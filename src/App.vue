@@ -40,6 +40,9 @@ const rosUrl = computed(() => `ws://${rosIp.value}:${rosPort.value}`)
 
 const { connected, statusText, lastError } = useRosStatus()
 
+/** 电机报警温度（℃），用户可调 */
+const alarmTemp = ref(70)
+
 /** 声明式订阅（Topic 配置见 src/ros/topics.ts） */
 const { subscribeAll } = useTopics()
 
@@ -86,6 +89,9 @@ function handleDisconnect(): void {
 onBeforeUnmount(() => {
   disconnect()
 })
+
+// 调试：浏览器控制台可直接访问 __topicData
+;(window as any).__topicData = topicData
 </script>
 
 <template>
@@ -93,9 +99,19 @@ onBeforeUnmount(() => {
     <ToastContainer />
     <!-- ===== 顶部导航栏 ===== -->
     <header class="topbar">
-      <h1 class="title">🤖 宇树 G1 仪表盘</h1>
+      <h1 class="title">🤖 unitree-G1-dashboard</h1>
 
       <div class="status-area">
+        <!-- 报警温度 -->
+        <span v-if="!connected" class="alarm-label">报警:</span>
+        <input
+          v-if="!connected"
+          v-model.number="alarmTemp"
+          class="input-alarm"
+          placeholder="温度℃"
+          title="电机温度超过此值弹出告警"
+        />
+
         <!-- 连接状态指示灯 -->
         <span class="status-dot" :class="{ on: connected }"></span>
         <span class="status-text">{{ statusText }}</span>
@@ -142,7 +158,7 @@ onBeforeUnmount(() => {
       </section>
 
       <aside class="right-panel">
-        <Telemetry :motor-state="topicData.motorState?.motors" />
+        <Telemetry :motor-state="topicData.motorState?.motors" :alarm-temp="alarmTemp" />
       </aside>
     </main>
 
@@ -214,6 +230,12 @@ onBeforeUnmount(() => {
   color: #e74c3c;
 }
 
+.alarm-label {
+  font-size: 12px;
+  color: #e67e22;
+  white-space: nowrap;
+}
+
 /* ---------- 按钮 ---------- */
 .btn {
   padding: 6px 16px;
@@ -250,6 +272,21 @@ onBeforeUnmount(() => {
 
 .input-port:focus {
   border-color: #3498db;
+  outline: none;
+}
+
+.input-alarm {
+  width: 70px;
+  padding: 5px 8px;
+  border: 1px solid #e67e22;
+  border-radius: 4px;
+  background: #0f1a2a;
+  color: #e67e22;
+  font-size: 12px;
+}
+
+.input-alarm:focus {
+  border-color: #e67e22;
   outline: none;
 }
 

@@ -211,15 +211,7 @@ export interface LowState {
  * 测试方法：手推某个关节看哪个电机的 q 值变了。
  */
 export const G1_MOTOR_JOINTS: string[] = [
-  // 0-5: 右腿
-  'right_hip_yaw',
-  'right_hip_roll',
-  'right_hip_pitch',
-  'right_knee',
-  'right_ankle_pitch',
-  'right_ankle_roll',
-
-  // 6-11: 左腿
+  // 0-5: 左腿
   'left_hip_yaw',
   'left_hip_roll',
   'left_hip_pitch',
@@ -227,20 +219,20 @@ export const G1_MOTOR_JOINTS: string[] = [
   'left_ankle_pitch',
   'left_ankle_roll',
 
-  // 12-13: 腰部
+  // 6-11: 右腿
+  'right_hip_yaw',
+  'right_hip_roll',
+  'right_hip_pitch',
+  'right_knee',
+  'right_ankle_pitch',
+  'right_ankle_roll',
+
+  // 12-14: 腰部
   'waist_yaw',
   'waist_roll',
+  'waist_pitch',
 
-  // 14-20: 右臂
-  'right_shoulder_pitch',
-  'right_shoulder_roll',
-  'right_shoulder_yaw',
-  'right_elbow',
-  'right_wrist_pitch',
-  'right_wrist_roll',
-  'right_wrist_yaw',
-
-  // 21-27: 左臂
+  // 15-21: 左臂
   'left_shoulder_pitch',
   'left_shoulder_roll',
   'left_shoulder_yaw',
@@ -248,22 +240,31 @@ export const G1_MOTOR_JOINTS: string[] = [
   'left_wrist_pitch',
   'left_wrist_roll',
   'left_wrist_yaw',
+
+  // 22-28: 右臂
+  'right_shoulder_pitch',
+  'right_shoulder_roll',
+  'right_shoulder_yaw',
+  'right_elbow',
+  'right_wrist_roll',
+  'right_wrist_pitch',
+  'right_wrist_yaw',
 ]
 
 /**
  * 电机序号 → 中文显示名（与 G1_MOTOR_JOINTS 一一对应）
  */
 export const G1_MOTOR_DISPLAY_NAMES: string[] = [
-  // 0-5: 右腿
-  '右髋偏航', '右髋侧摆', '右髋俯仰', '右膝', '右踝俯仰', '右踝侧摆',
-  // 6-11: 左腿
+  // 0-5: 左腿
   '左髋偏航', '左髋侧摆', '左髋俯仰', '左膝', '左踝俯仰', '左踝侧摆',
-  // 12-13: 腰部
-  '腰部偏航', '腰部侧摆',
-  // 14-20: 右臂
-  '右肩俯仰', '右肩侧摆', '右肩偏航', '右肘', '右腕俯仰', '右腕侧摆', '右腕偏航',
-  // 21-27: 左臂
+  // 6-11: 右腿
+  '右髋偏航', '右髋侧摆', '右髋俯仰', '右膝', '右踝俯仰', '右踝侧摆',
+  // 12-14: 腰部
+  '腰部偏航', '腰部侧摆', '腰部俯仰',
+  // 15-21: 左臂
   '左肩俯仰', '左肩侧摆', '左肩偏航', '左肘', '左腕俯仰', '左腕侧摆', '左腕偏航',
+  // 22-28: 右臂
+  '右肩俯仰', '右肩侧摆', '右肩偏航', '右肘', '右腕侧摆', '右腕俯仰', '右腕偏航',
 ]
 
 /**
@@ -273,20 +274,20 @@ export const G1_MOTOR_DISPLAY_NAMES: string[] = [
  * 验证方法：手推机器人某个关节，看 lowstate-data.json 里哪个 index 的 q 变了。
  */
 export const G1_MOTOR_TO_URDF_JOINT: string[] = [
-  // 0-5: 右腿
-  'right_hip_yaw_joint', 'right_hip_roll_joint', 'right_hip_pitch_joint',
-  'right_knee_joint', 'right_ankle_pitch_joint', 'right_ankle_roll_joint',
-  // 6-11: 左腿
+  // 0-5: 左腿
   'left_hip_yaw_joint', 'left_hip_roll_joint', 'left_hip_pitch_joint',
   'left_knee_joint', 'left_ankle_pitch_joint', 'left_ankle_roll_joint',
-  // 12-13: 腰部
-  'waist_yaw_joint', 'waist_roll_joint',
-  // 14-20: 右臂
-  'right_shoulder_pitch_joint', 'right_shoulder_roll_joint', 'right_shoulder_yaw_joint',
-  'right_elbow_joint', 'right_wrist_pitch_joint', 'right_wrist_roll_joint', 'right_wrist_yaw_joint',
-  // 21-27: 左臂
+  // 6-11: 右腿
+  'right_hip_yaw_joint', 'right_hip_roll_joint', 'right_hip_pitch_joint',
+  'right_knee_joint', 'right_ankle_pitch_joint', 'right_ankle_roll_joint',
+  // 12-14: 腰部
+  'waist_yaw_joint', 'waist_roll_joint', 'waist_pitch_joint',
+  // 15-21: 左臂
   'left_shoulder_pitch_joint', 'left_shoulder_roll_joint', 'left_shoulder_yaw_joint',
   'left_elbow_joint', 'left_wrist_pitch_joint', 'left_wrist_roll_joint', 'left_wrist_yaw_joint',
+  // 22-28: 右臂
+  'right_shoulder_pitch_joint', 'right_shoulder_roll_joint', 'right_shoulder_yaw_joint',
+  'right_elbow_joint', 'right_wrist_roll_joint', 'right_wrist_pitch_joint', 'right_wrist_yaw_joint',
 ]
 
 // -------------------------------------------------------------------
@@ -300,8 +301,8 @@ export interface JointCalibration {
   invert: boolean
 }
 
-/** 28 个电机的校准参数，与 G1_MOTOR_JOINTS 一一对应 */
-export const G1_MOTOR_CALIBRATION: JointCalibration[] = Array.from({ length: 28 }, () => ({
+/** 29 个电机的校准参数，与 G1_MOTOR_JOINTS 一一对应 */
+export const G1_MOTOR_CALIBRATION: JointCalibration[] = Array.from({ length: 29 }, () => ({
   offset: 0,
   invert: false,
 }))
@@ -386,3 +387,15 @@ export const G1_JOINT_MAPPING: JointMapping[] = [
   { jointName: 'right_hip_pitch', displayName: '右髋', axis: 'z', invert: true,  group: 'right_upper_leg' },
   { jointName: 'right_knee',      displayName: '右膝', axis: 'z', invert: false, group: 'right_lower_leg' },
 ]
+
+// ============================================================
+// 暴露到 window，方便浏览器控制台调试校准
+// ============================================================
+
+if (typeof window !== 'undefined') {
+  ;(window as any).G1_MOTOR_CALIBRATION = G1_MOTOR_CALIBRATION
+  ;(window as any).G1_MOTOR_JOINTS = G1_MOTOR_JOINTS
+  ;(window as any).G1_MOTOR_DISPLAY_NAMES = G1_MOTOR_DISPLAY_NAMES
+  ;(window as any).captureBaseline = captureBaseline
+  ;(window as any).resetCalibration = resetCalibration
+}

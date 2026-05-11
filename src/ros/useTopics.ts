@@ -16,9 +16,9 @@
  * 新增 Topic 不需要改这个文件，只改 topics.ts 即可。
  */
 
-import { reactive, shallowRef } from 'vue'
+import { reactive } from 'vue'
 import { subscribe } from './connection'
-import { TOPICS, type TopicConfig } from './topics'
+import { TOPICS } from './topics'
 
 // ============================================================
 // 响应式数据存储（key = TopicConfig.id）
