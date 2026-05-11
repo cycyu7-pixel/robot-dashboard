@@ -63,6 +63,9 @@ export interface ConnectCallbacks {
   onClose?: () => void
 }
 
+/** 连接超时（毫秒） */
+const CONNECT_TIMEOUT = 8000
+
 /** 连接到 ROS */
 export function connect(url: string = DEFAULT_URL, callbacks?: ConnectCallbacks): void {
   // 如果已经有连接了，先断开
@@ -76,8 +79,28 @@ export function connect(url: string = DEFAULT_URL, callbacks?: ConnectCallbacks)
   ros = new ROSLIB.Ros({ url })
   console.log(`[ROS] 正在连接 ${url} ...`)
 
+  let cleanedUp = false
+  const cleanup = () => {
+    if (cleanedUp) return
+    cleanedUp = true
+    clearTimeout(timer)
+  }
+
+  // --- 连接超时 ---
+  const timer = setTimeout(() => {
+    if (cleanedUp) return
+    cleanedUp = true
+    statusText.value = '连接超时'
+    lastError.value = '连接超时，请检查机器人是否在线'
+    console.warn('[ROS] ⏰ 连接超时')
+    ros?.close()
+    ros = null
+    callbacks?.onError?.('连接超时，请检查机器人是否在线')
+  }, CONNECT_TIMEOUT)
+
   // --- 连接成功 ---
   ros.on('connection', () => {
+    cleanup()
     connected.value = true
     statusText.value = `已连接 → ${url}`
     console.log('[ROS] ✅ 连接成功')
@@ -86,6 +109,7 @@ export function connect(url: string = DEFAULT_URL, callbacks?: ConnectCallbacks)
 
   // --- 连接关闭 ---
   ros.on('close', () => {
+    cleanup()
     connected.value = false
     statusText.value = '连接已关闭'
     console.log('[ROS] ⚠️ 连接已关闭')
@@ -94,6 +118,7 @@ export function connect(url: string = DEFAULT_URL, callbacks?: ConnectCallbacks)
 
   // --- 连接出错 ---
   ros.on('error', (err: unknown) => {
+    cleanup()
     connected.value = false
     statusText.value = '连接失败'
     const msg = err instanceof Error ? err.message : String(err)
