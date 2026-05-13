@@ -76,7 +76,7 @@ export function useTopics() {
         } catch (e) {
           console.error(`[useTopics] 处理 ${config.name} 消息出错:`, e)
         }
-      })
+      }, config.throttle_rate)
     }
   }
 

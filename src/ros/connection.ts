@@ -155,14 +155,16 @@ export function getRos(): ROSLIB.Ros | null {
 /**
  * 订阅一个 ROS Topic
  *
- * @param topicName  - 要订阅的 topic 名称，如 '/odom'、'/cmd_vel'
+ * @param topicName   - 要订阅的 topic 名称，如 '/odom'、'/cmd_vel'
  * @param messageType - ROS 消息类型。传空字符串 '' 表示不限制类型（rosbridge 原样转发）
- * @param callback   - 收到消息时回调，msg 是解析好的 JS 对象
+ * @param callback    - 收到消息时回调，msg 是解析好的 JS 对象
+ * @param throttleRate - 可选，rosbridge 端限流（msg/s），降低机器⼈侧 CPU 开销
  */
 export function subscribe(
   topicName: string,
   messageType: string,
-  callback: (msg: any) => void
+  callback: (msg: any) => void,
+  throttleRate?: number
 ): void {
   if (!ros) {
     console.warn('[ROS] 尚未连接，无法订阅', topicName)
@@ -173,6 +175,7 @@ export function subscribe(
     ros: ros,
     name: topicName,
     messageType: messageType,
+    throttle_rate: throttleRate,
   })
 
   topic.subscribe((msg: any) => {

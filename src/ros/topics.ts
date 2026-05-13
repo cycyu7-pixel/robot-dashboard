@@ -62,6 +62,8 @@ export interface TopicConfig {
   process: (msg: any) => any
   /** 节流：限制处理频率，单位 ms（如 50 = 20fps），高频 topic 用 */
   throttleMs?: number
+  /** rosbridge 端限流（msg/s），降低机器⼈侧 CPU */
+  throttle_rate?: number
 }
 
 // ============================================================
@@ -89,6 +91,8 @@ export const TOPICS: TopicConfig[] = [
     },
     /** 50ms 节流 = 20fps，避免高频 lowstate 撑爆页面 */
     throttleMs: 50,
+    /** rosbridge 端限流 20 msg/s，减少机器⼈侧序列化开销 */
+    throttle_rate: 20,
   },
 
   // ---- 里程计（暂时关闭，Topic 不存在） ----
