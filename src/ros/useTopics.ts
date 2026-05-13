@@ -30,6 +30,9 @@ export const topicData = reactive<Record<string, any>>({})
 /** 是否已订阅（防止重复订阅） */
 let subscribed = false
 
+/** 节流时间戳 Map，key = TopicConfig.id */
+const lastProcessTime = new Map<string, number>()
+
 // ============================================================
 // composable
 // ============================================================
@@ -60,6 +63,14 @@ export function useTopics() {
 
     for (const config of enabled) {
       subscribe(config.name, config.messageType, (msg: any) => {
+        // 节流：高频 topic 限制处理频率
+        if (config.throttleMs && config.throttleMs > 0) {
+          const now = Date.now()
+          const last = lastProcessTime.get(config.id) || 0
+          if (now - last < config.throttleMs) return
+          lastProcessTime.set(config.id, now)
+        }
+
         try {
           topicData[config.id] = config.process(msg)
         } catch (e) {

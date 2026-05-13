@@ -16,11 +16,13 @@
  */
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import * as ROSLIB from 'roslib'
 import RobotView3D from '@/components/RobotView3D/RobotView3D.vue'
 import Telemetry from '@/components/Telemetry/Telemetry.vue'
-import { connect, disconnect, useRosStatus, callService } from '@/ros'
+import { connect, disconnect, useRosStatus, callService, getRos } from '@/ros'
 import { useTopics, topicData } from '@/ros/useTopics'
 import { G1_JOINT_MAPPING } from '@/models'
+import { FSM_MODE_MAP, FSM_IDS } from '@/ros/topics'
 import ToastContainer from '@/components/Toast/ToastContainer.vue'
 import { showToast } from '@/components/Toast/toast'
 
@@ -112,11 +114,111 @@ async function handleQueryEStop(): Promise<void> {
   }
 }
 
-/** 连接后自动开始轮询，断开自动停止 */
+// ============================================================
+// 5. 模式切换 & 运动服务（unitree_api/msg/Request）
+// ============================================================
+
+/** FSM ID → 中文名 */
+const currentModeLabel = computed(() => {
+  return FSM_MODE_MAP[sportFsmId.value] ?? `模式${sportFsmId.value}`
+})
+
+/** 运动服务 FSM ID（来自 API 响应） */
+const sportFsmId = ref(0)
+
+/** 可选模式列表 */
+const robotModes = FSM_IDS
+
+/** 模式菜单是否打开 */
+const modeMenuOpen = ref(false)
+
+const API_IDS = {
+  GET_FSM_ID: 7001,
+  SET_FSM_ID: 7101,
+}
+
+let requestTopic: ROSLIB.Topic | null = null
+let responseTopic: ROSLIB.Topic | null = null
+
+function initSportService(): void {
+  const ros = getRos()
+  if (!ros) return
+
+  requestTopic = new ROSLIB.Topic({
+    ros,
+    name: '/api/sport/request',
+    messageType: 'unitree_api/msg/Request',
+  })
+
+  responseTopic = new ROSLIB.Topic({
+    ros,
+    name: '/api/sport/response',
+    messageType: 'unitree_api/msg/Response',
+  })
+
+  responseTopic.subscribe((msg: any) => {
+    for (const key of ['data', 'datas', 'parameter']) {
+      const val = msg?.[key]
+      if (val !== undefined && val !== null) {
+        if (typeof val === 'string') {
+          try {
+            const parsed = JSON.parse(val)
+            if (parsed?.data !== undefined) sportFsmId.value = Number(parsed.data)
+          } catch {}
+        } else if (typeof val === 'number') {
+          sportFsmId.value = val
+        } else if (typeof val === 'object' && val?.data !== undefined) {
+          sportFsmId.value = Number(val.data)
+        }
+      }
+    }
+  })
+}
+
+function sendRequest(request: object): void {
+  if (!requestTopic) return
+  requestTopic.publish(request)
+}
+
+function queryFsmId(): void {
+  sendRequest({
+    header: { identity: { api_id: API_IDS.GET_FSM_ID } },
+  })
+}
+
+function handleModeSelect(mode: typeof robotModes[0]): void {
+  modeMenuOpen.value = false
+  showToast(`切换至「${mode.label}」模式`, 'info')
+  sendRequest({
+    header: { identity: { api_id: API_IDS.SET_FSM_ID } },
+    parameter: JSON.stringify({ data: mode.id }),
+  })
+  setTimeout(() => queryFsmId(), 1000)
+}
+
+function handleDocClick(e: MouseEvent): void {
+  const target = e.target as HTMLElement
+  if (!target.closest('.mode-switch')) {
+    modeMenuOpen.value = false
+  }
+}
+
+watch(modeMenuOpen, (val) => {
+  if (val) {
+    document.addEventListener('click', handleDocClick)
+    queryFsmId()
+  } else {
+    document.removeEventListener('click', handleDocClick)
+  }
+})
+
+// 连接后初始化运动服务 & 查询当前模式
 watch(connected, (val) => {
   if (val) {
     handleQueryEStop()
     estopTimer = setInterval(handleQueryEStop, 3000)
+    initSportService()
+    queryFsmId()
   } else if (estopTimer) {
     clearInterval(estopTimer)
     estopTimer = null
@@ -125,7 +227,7 @@ watch(connected, (val) => {
 })
 
 // ============================================================
-// 5. 清理
+// 6. 清理
 // ============================================================
 
 onBeforeUnmount(() => {
@@ -159,6 +261,29 @@ onBeforeUnmount(() => {
         <span class="status-dot" :class="{ on: connected }"></span>
         <span class="status-text">{{ statusText }}</span>
         <span v-if="lastError" class="error-text">（{{ lastError }}）</span>
+
+        <!-- 模式切换（仅连接后可用） -->
+        <div v-if="connected" class="mode-switch">
+          <button class="btn-mode" @click.stop="modeMenuOpen = !modeMenuOpen" title="切换机器人模式">
+            <span class="mode-indicator" :class="'mode-' + sportFsmId"></span>
+            {{ currentModeLabel }}
+            <span class="mode-arrow">▾</span>
+          </button>
+          <Transition name="dropdown">
+            <ul v-if="modeMenuOpen" class="mode-menu">
+              <li
+                v-for="m in robotModes"
+                :key="m.id"
+                class="mode-menu-item"
+                :class="{ active: m.id === sportFsmId }"
+                @click="handleModeSelect(m)"
+              >
+                <span class="mode-indicator" :class="'mode-' + m.id"></span>
+                {{ m.label }}
+              </li>
+            </ul>
+          </Transition>
+        </div>
 
         <!-- 急停按钮（仅连接后可用） -->
         <button
@@ -360,6 +485,102 @@ onBeforeUnmount(() => {
 
 .btn-disconnect:hover {
   background: #c0392b;
+}
+
+/* ---------- 模式切换 ---------- */
+.mode-switch {
+  position: relative;
+}
+
+.btn-mode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 2px solid #3498db;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  background: transparent;
+  color: #3498db;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.btn-mode:hover {
+  background: #3498db;
+  color: #fff;
+}
+
+.mode-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.mode-indicator.mode-0 { background: #00d4ff; }
+.mode-indicator.mode-1 { background: #e74c3c; }
+.mode-indicator.mode-2 { background: #f1c40f; }
+.mode-indicator.mode-3 { background: #e67e22; }
+.mode-indicator.mode-4 { background: #9b59b6; }
+.mode-indicator.mode-5 { background: #2ecc71; }
+.mode-indicator.mode-501 { background: #3498db; }
+.mode-indicator.mode-706 { background: #1abc9c; }
+.mode-indicator.mode-702 { background: #e91e63; }
+.mode-indicator.mode-802 { background: #00bcd4; }
+
+.mode-arrow {
+  font-size: 10px;
+  margin-left: 2px;
+}
+
+.mode-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 120px;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: #1a2a4a;
+  border: 1px solid #2c3e50;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+}
+
+.mode-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: #bdc3c7;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mode-menu-item:hover {
+  background: #243456;
+  color: #ecf0f1;
+}
+
+.mode-menu-item.active {
+  color: #3498db;
+  font-weight: 600;
+}
+
+.dropdown-enter-active,
+.dropdown-leave-active {
+  transition: all 0.15s ease;
+}
+
+.dropdown-enter-from,
+.dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 
 /* ---------- 急停按钮 ---------- */

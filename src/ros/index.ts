@@ -6,7 +6,7 @@
  *   import { useTopics, topicData } from '@/ros/useTopics'
  *   import { TOPICS } from '@/ros/topics'
  */
-export { connect, disconnect, subscribe, publish, callService, useRosStatus } from './connection'
+export { connect, disconnect, subscribe, publish, callService, useRosStatus, getRos } from './connection'
 export { useTopics, topicData } from './useTopics'
 export { TOPICS } from './topics'
 export type { TopicConfig } from './topics'

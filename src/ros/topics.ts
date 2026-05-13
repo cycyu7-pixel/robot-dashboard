@@ -25,6 +25,26 @@
 
 import { extractJointAngles } from '@/models'
 
+/** FSM ID → 模式名映射（宇树 G1） */
+export const FSM_MODE_MAP: Record<number, string> = {
+  0: '零力矩',
+  1: '阻尼模式',
+  2: '下蹲',
+  3: '坐姿',
+  4: '预备模式',
+  5: '平衡站立',
+  501: '常规运控',
+  706: '平衡下蹲、蹲起',
+  702: '躺起',
+  802: '走跑模式',
+
+}
+
+export const FSM_IDS = Object.entries(FSM_MODE_MAP).map(([id, label]) => ({
+  id: Number(id),
+  label,
+}))
+
 // ============================================================
 // 单个 Topic 配置
 // ============================================================
@@ -40,6 +60,8 @@ export interface TopicConfig {
   id: string
   /** 把原始 ROS 消息转为业务对象，返回的数据会存入 dataStore[id] */
   process: (msg: any) => any
+  /** 节流：限制处理频率，单位 ms（如 50 = 20fps），高频 topic 用 */
+  throttleMs?: number
 }
 
 // ============================================================
@@ -56,12 +78,17 @@ export const TOPICS: TopicConfig[] = [
     process: (msg: any) => {
       const motors: any[] = msg.motor_state ?? msg.motorState ?? []
       return {
-        /** 原始 28 电机数组，给 3D 视图 & 遥测图表用 */
         motors,
         /** { 关节名: 弧度 }，给 2D 视图用 */
         jointAngles: extractJointAngles(motors),
+        /** 当前运控模式 FSM ID */
+        modeMachine: msg.mode_machine ?? 0,
+        /** 主运控模式 FSM ID */
+        modePr: msg.mode_pr ?? 0,
       }
     },
+    /** 50ms 节流 = 20fps，避免高频 lowstate 撑爆页面 */
+    throttleMs: 50,
   },
 
   // ---- 里程计（暂时关闭，Topic 不存在） ----
