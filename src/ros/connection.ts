@@ -143,6 +143,11 @@ export function disconnect(): void {
   console.log('[ROS] 已断开连接')
 }
 
+/** 获取当前 ROS 实例（供需要直接使用 ros 实例的场合） */
+export function getRos(): ROSLIB.Ros | null {
+  return ros
+}
+
 // ============================================================
 // 5. 核心操作 —— 订阅 Topic
 // ============================================================
