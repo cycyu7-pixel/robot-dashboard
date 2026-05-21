@@ -17,13 +17,13 @@ case "${1:-help}" in
     docker build -t $NAME .
     ;;
   run)
-    docker run -d --name $NAME -p $PORT:80 $NAME
+    docker run -d --restart unless-stopped --name $NAME -p $PORT:80 $NAME
     echo "→ http://localhost:$PORT"
     ;;
   restart)
     docker stop $NAME 2>/dev/null && docker rm $NAME 2>/dev/null
     docker build -t $NAME .
-    docker run -d --name $NAME -p $PORT:80 $NAME
+    docker run -d --restart unless-stopped --name $NAME -p $PORT:80 $NAME
     echo "→ http://localhost:$PORT"
     ;;
   stop)
