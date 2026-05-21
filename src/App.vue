@@ -49,8 +49,8 @@ const alarmTemp = ref(70)
 const { subscribeAll } = useTopics()
 
 // 2D 视图容器尺寸
-const viewWidth = ref(440)
-const viewHeight = ref(620)
+const viewWidth = 440
+const viewHeight = 620
 
 // ============================================================
 // 3. 按钮操作
@@ -344,11 +344,6 @@ onBeforeUnmount(() => {
     <!-- ===== 底部状态栏 ===== -->
     <footer class="bottombar">
       <span>ROS: {{ rosUrl }}</span>
-      <span v-if="topicData.odom">
-        线速度: {{ topicData.odom.twist.linear.x.toFixed(3) }} m/s
-        &nbsp;|&nbsp;
-        角速度: {{ topicData.odom.twist.angular.z.toFixed(3) }} rad/s
-      </span>
       <span>电机: {{ Object.keys(topicData.motorState?.jointAngles ?? {}).length }} | 2D 关节: {{ G1_JOINT_MAPPING.length }}</span>
     </footer>
   </div>

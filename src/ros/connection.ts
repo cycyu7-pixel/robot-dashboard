@@ -178,9 +178,7 @@ export function subscribe(
     throttle_rate: throttleRate,
   })
 
-  topic.subscribe((msg: any) => {
-    callback(msg)
-  })
+  topic.subscribe(callback)
   topics.push(topic)
   console.log(`[ROS] 已订阅 ${topicName} ${messageType ? '(' + messageType + ')' : '(any type)'}`)
 }

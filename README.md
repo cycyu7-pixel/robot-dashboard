@@ -19,8 +19,13 @@ npm run dev
 
 ```bash
 ssh unitree@<机器人IP>
-ros2 launch rosbridge_server rosbridge_websocket_launch.xml
+cd gb_ros_ws_g1/unitree_ros2
+ROSBRIDGE_ADDRESS=0.0.0.0 \
+ROSBRIDGE_PORT=9090 \
+./scripts/run_rosbridge_server.sh
 ```
+
+> 如需要开机自启，将 `scripts/rosbridge.service` 复制到机器人 `/etc/systemd/system/` 后执行 `sudo systemctl enable rosbridge`。
 
 ## 技术栈
 
