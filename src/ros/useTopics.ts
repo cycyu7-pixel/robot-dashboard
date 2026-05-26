@@ -80,8 +80,15 @@ export function useTopics() {
     }
   }
 
+  /** 重置订阅状态（断线重连时调用） */
+  function resetSubscribed(): void {
+    subscribed = false
+  }
+
   return {
     /** 订阅所有启用的 Topic */
     subscribeAll,
+    /** 重置订阅状态，供断开连接时调用 */
+    resetSubscribed,
   }
 }

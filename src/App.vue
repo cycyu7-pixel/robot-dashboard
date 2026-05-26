@@ -46,7 +46,7 @@ const { connected, statusText, lastError } = useRosStatus()
 const alarmTemp = ref(70)
 
 /** 声明式订阅（Topic 配置见 src/ros/topics.ts） */
-const { subscribeAll } = useTopics()
+const { subscribeAll, resetSubscribed } = useTopics()
 
 // 2D 视图容器尺寸
 const viewWidth = 440
@@ -78,6 +78,7 @@ function handleConnect(): void {
 /** 断开连接，清空所有 topic 数据 */
 function handleDisconnect(): void {
   disconnect()
+  resetSubscribed()
   // 清空 topicData 中所有 key
   for (const key of Object.keys(topicData)) {
     delete topicData[key]
