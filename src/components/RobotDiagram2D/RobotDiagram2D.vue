@@ -555,9 +555,14 @@ function onPointerMove(e: PointerEvent): void {
       tooltipEl.innerHTML = `<strong>${group.displayName}</strong><span class="tt-detail">${parts}</span>`
       tooltipEl.style.display = ''
       const cr = containerRef.value!.getBoundingClientRect()
-      // 左边关节 tooltip 往右展开，右边关节往左展开
-      const tipDir = group.side === 'left' ? 1 : -1
-      tooltipEl.style.left = `${e.clientX - cr.left + tipDir * 14}px`
+      const tw = tooltipEl.offsetWidth
+      const gap = 10
+      // 左边关节（屏幕右侧）→ tooltip 以光标为右边界向左展开
+      // 右边关节（屏幕左侧）→ tooltip 以光标为左边界向右展开
+      const tipX = group.side === 'left'
+        ? e.clientX - cr.left - tw - gap   // 右对齐光标
+        : e.clientX - cr.left + gap         // 左对齐光标
+      tooltipEl.style.left = `${tipX}px`
       tooltipEl.style.top = `${e.clientY - cr.top - 8}px`
       return
     }
