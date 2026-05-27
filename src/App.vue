@@ -17,11 +17,11 @@
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import * as ROSLIB from 'roslib'
-import RobotView3D from '@/components/RobotView3D/RobotView3D.vue'
+import RobotDiagram2D from '@/components/RobotDiagram2D/RobotDiagram2D.vue'
 import Telemetry from '@/components/Telemetry/Telemetry.vue'
 import { connect, disconnect, useRosStatus, callService, getRos } from '@/ros'
 import { useTopics, topicData } from '@/ros/useTopics'
-import { G1_JOINT_MAPPING } from '@/models'
+import { G1_JOINT_MAPPING, G1_MOTOR_JOINTS, G1_MOTOR_DISPLAY_NAMES } from '@/models'
 import { FSM_MODE_MAP, FSM_IDS } from '@/ros/topics'
 import ToastContainer from '@/components/Toast/ToastContainer.vue'
 import { showToast } from '@/components/Toast/toast'
@@ -30,7 +30,7 @@ import { showToast } from '@/components/Toast/toast'
 // 1. 连接配置（用户可在页面上修改）
 // ============================================================
 
-const rosIp = ref('192.168.123.164')
+const rosIp = ref('192.168.123.99')
 const rosPort = ref('9090')
 
 /** rosbridge WebSocket 地址，由 IP + 端口拼接 */
@@ -49,8 +49,8 @@ const alarmTemp = ref(70)
 const { subscribeAll, resetSubscribed } = useTopics()
 
 // 2D 视图容器尺寸
-const viewWidth = 440
-const viewHeight = 620
+const viewWidth = 500
+const viewHeight = 700
 
 // ============================================================
 // 3. 按钮操作
@@ -228,7 +228,33 @@ watch(connected, (val) => {
 })
 
 // ============================================================
-// 6. 清理
+// 6. 温度告警 toast
+// ============================================================
+
+/** 已触发过告警的关节（去重，温度回落自动清除） */
+const alertedJoints = new Set<string>()
+
+watch(() => topicData.motorState?.motors, (motors) => {
+  if (!motors || motors.length === 0) return
+  const threshold = alarmTemp.value
+  for (let i = 0; i < Math.min(motors.length, G1_MOTOR_JOINTS.length); i++) {
+    const m = motors[i]
+    if (m.mode !== 0 && m.mode !== 1) continue
+    const temp = m.temperature?.[0] ?? 0
+    const name = G1_MOTOR_JOINTS[i]
+    const display = G1_MOTOR_DISPLAY_NAMES[i] ?? name
+    if (temp > threshold && !alertedJoints.has(name)) {
+      alertedJoints.add(name)
+      showToast(`${display} 电机过热: ${temp.toFixed(1)}°C`, 'error', 6000)
+    }
+    if (temp <= threshold) {
+      alertedJoints.delete(name)
+    }
+  }
+}, { deep: false })
+
+// ============================================================
+// 7. 清理
 // ============================================================
 
 onBeforeUnmount(() => {
@@ -330,15 +356,16 @@ onBeforeUnmount(() => {
     <!-- ===== 主体：左 3D 视图 + 右图表 ===== -->
     <main class="main">
       <section class="left-panel">
-        <RobotView3D
+        <RobotDiagram2D
           :motor-state="topicData.motorState?.motors"
+          :alarm-temp="alarmTemp"
           :width="viewWidth"
           :height="viewHeight"
         />
       </section>
 
       <aside class="right-panel">
-        <Telemetry :motor-state="topicData.motorState?.motors" :alarm-temp="alarmTemp" />
+        <Telemetry :motor-state="topicData.motorState?.motors" />
       </aside>
     </main>
 

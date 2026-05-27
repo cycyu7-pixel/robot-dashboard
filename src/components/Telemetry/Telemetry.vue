@@ -8,13 +8,11 @@ import { CanvasRenderer } from 'echarts/renderers'
 import type { MotorState } from '@/models'
 import { G1_MOTOR_JOINTS, G1_MOTOR_DISPLAY_NAMES } from '@/models'
 import ChartCard from '@/components/Widgets/ChartCard.vue'
-import { showToast } from '@/components/Toast/toast'
 
 use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const props = defineProps<{
   motorState?: MotorState[]
-  alarmTemp?: number
 }>()
 
 const MAX_POINTS = 60
@@ -48,11 +46,6 @@ function push<T>(arr: { value: T[] }, item: T): void {
 
 let lastSampleTime = 0
 
-/** 已触发过告警的关节（去重，温度回落自动清除） */
-const alertedJoints = new Set<string>()
-/** 报警阈值，默认 70℃ */
-const threshold = computed(() => props.alarmTemp ?? 70)
-
 watch(() => props.motorState, (motors) => {
   if (!motors || motors.length === 0) return
   const t = now()
@@ -85,39 +78,6 @@ watch(() => props.motorState, (motors) => {
     max: vols.length ? Math.max(...vols) : 0,
     avg: vols.length ? vols.reduce((a, b) => a + b, 0) / vols.length : 0,
   })
-
-  // 温度检查（每个关节独立告警）
-  for (let i = 0; i < Math.min(motors.length, G1_MOTOR_JOINTS.length); i++) {
-    const m = motors[i]
-    if (m.mode !== 0 && m.mode !== 1) continue
-    const temp = m.temperature?.[0] ?? 0
-    const name = G1_MOTOR_JOINTS[i]
-    const display = G1_MOTOR_DISPLAY_NAMES[i] ?? name
-    if (temp > threshold.value && !alertedJoints.has(name)) {
-      alertedJoints.add(name)
-      showToast(`${display} 电机过热: ${temp.toFixed(1)}°C`, 'error', 6000)
-    }
-    if (temp <= threshold.value) {
-      alertedJoints.delete(name)
-    }
-  }
-})
-
-// ============================================================
-// 各关节温度展示（实时，不节流）
-// ============================================================
-
-const jointTemps = computed(() => {
-  const motors = props.motorState
-  if (!motors || motors.length === 0) return []
-  const temps: { name: string; temp: number; alert: boolean }[] = []
-  for (let i = 0; i < Math.min(motors.length, G1_MOTOR_JOINTS.length); i++) {
-    const m = motors[i]
-    if (m.mode !== 0 && m.mode !== 1) continue
-    const t = m.temperature?.[0] ?? 0
-    temps.push({ name: G1_MOTOR_DISPLAY_NAMES[i] ?? G1_MOTOR_JOINTS[i], temp: t, alert: t > threshold.value })
-  }
-  return temps
 })
 
 // ============================================================
@@ -217,40 +177,22 @@ const voltOption = computed(() => ({
 
 <template>
   <div class="telemetry-grid">
-    <!-- 1. 电机温度监控（放在最前面，便于观察） -->
-    <ChartCard title="电机温度" icon="🌡️">
-      <div class="temp-grid">
-        <div
-          v-for="j in jointTemps"
-          :key="j.name"
-          class="temp-item"
-          :class="{ alert: j.alert }"
-        >
-          <span class="temp-name">{{ j.name }}</span>
-          <span class="temp-value">{{ j.temp.toFixed(1) }}°C</span>
-        </div>
-        <div v-if="jointTemps.length === 0" class="temp-empty">
-          等待数据...
-        </div>
-      </div>
-    </ChartCard>
-
-    <!-- 2. 下肢关节角度 -->
+    <!-- 1. 下肢关节角度 -->
     <ChartCard title="下肢关节角度" icon="🦿">
       <VChart class="chart" :option="angleOption" autoresize />
     </ChartCard>
 
-    <!-- 3. 关节力矩 -->
+    <!-- 2. 关节力矩 -->
     <ChartCard title="关节力矩" icon="💪">
       <VChart class="chart" :option="torqueOption" autoresize />
     </ChartCard>
 
-    <!-- 4. 电机电压 -->
+    <!-- 3. 电机电压 -->
     <ChartCard title="电机电压" icon="⚡">
       <VChart class="chart" :option="voltOption" autoresize />
     </ChartCard>
 
-    <!-- 5. 调试面板：原始电机 q 值（用于验证关节映射） -->
+    <!-- 4. 调试面板：原始电机 q 值（用于验证关节映射） -->
     <ChartCard title="调试面板 - 电机原始 q 值" icon="🔧">
       <p class="debug-hint">手推机器人一个关节，观察哪个 index 的 q 值变化。绿色高亮 = 正在变化，括号内为变化量</p>
       <div class="debug-grid">
@@ -285,67 +227,6 @@ const voltOption = computed(() => ({
   width: 100%;
   height: 100%;
   min-height: 260px;
-}
-
-/* ---- 温度网格 ---- */
-.temp-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 0;
-  min-height: 200px;
-  align-content: flex-start;
-}
-
-.temp-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background: #1a2a3a;
-  border: 1px solid #2c3e50;
-  border-radius: 6px;
-  padding: 6px 10px;
-  min-width: 110px;
-  transition: border-color 0.3s, background 0.3s;
-}
-
-.temp-item.alert {
-  border-color: #e74c3c;
-  background: #2a1a1a;
-  animation: temp-pulse 1s ease-in-out infinite alternate;
-}
-
-@keyframes temp-pulse {
-  from { box-shadow: 0 0 4px rgba(231, 76, 60, 0.3); }
-  to   { box-shadow: 0 0 12px rgba(231, 76, 60, 0.7); }
-}
-
-.temp-name {
-  font-size: 11px;
-  color: #7f8c8d;
-  margin-bottom: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100px;
-}
-
-.temp-value {
-  font-size: 18px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.temp-item.alert .temp-value {
-  color: #e74c3c;
-}
-
-.temp-empty {
-  color: #555;
-  padding: 40px 0;
-  text-align: center;
-  width: 100%;
 }
 
 /* ---- 调试面板 ---- */
