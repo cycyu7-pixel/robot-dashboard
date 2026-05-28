@@ -178,22 +178,22 @@ const voltOption = computed(() => ({
 <template>
   <div class="telemetry-grid">
     <!-- 1. 下肢关节角度 -->
-    <ChartCard title="下肢关节角度" icon="🦿">
+    <ChartCard title="下肢关节角度">
       <VChart class="chart" :option="angleOption" autoresize />
     </ChartCard>
 
     <!-- 2. 关节力矩 -->
-    <ChartCard title="关节力矩" icon="💪">
+    <ChartCard title="关节力矩">
       <VChart class="chart" :option="torqueOption" autoresize />
     </ChartCard>
 
     <!-- 3. 电机电压 -->
-    <ChartCard title="电机电压" icon="⚡">
+    <ChartCard title="电机电压">
       <VChart class="chart" :option="voltOption" autoresize />
     </ChartCard>
 
     <!-- 4. 调试面板：原始电机 q 值（用于验证关节映射） -->
-    <ChartCard title="调试面板 - 电机原始 q 值" icon="🔧">
+    <ChartCard title="调试面板 - 电机原始 q 值">
       <p class="debug-hint">手推机器人一个关节，观察哪个 index 的 q 值变化。绿色高亮 = 正在变化，括号内为变化量</p>
       <div class="debug-grid">
         <div

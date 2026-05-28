@@ -118,8 +118,6 @@ const _projVec = new THREE.Vector3()
 
 const raycaster = new THREE.Raycaster()
 const pointer = new THREE.Vector2()
-let hoveredBaseName: string | null = null
-
 // ============================================================
 // 初始�?
 // ============================================================
@@ -356,7 +354,6 @@ function onPointerMove(e: PointerEvent): void {
     const baseName = intersects[0].object.userData.baseName as string
     const group = jointGroups.get(baseName)
     if (group) {
-      hoveredBaseName = baseName
       renderer.domElement.style.cursor = 'pointer'
 
       // 构建工具提示
@@ -378,7 +375,6 @@ function onPointerMove(e: PointerEvent): void {
   }
 
   // 未命中
-  hoveredBaseName = null
   renderer.domElement.style.cursor = ''
   if (tooltipEl) tooltipEl.style.display = 'none'
 }
