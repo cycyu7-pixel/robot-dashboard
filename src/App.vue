@@ -20,6 +20,7 @@ import { ref, computed, onBeforeUnmount } from 'vue'
 import RobotDiagram2D from '@/components/RobotDiagram2D/RobotDiagram2D.vue'
 import Telemetry from '@/components/Telemetry/Telemetry.vue'
 import ToastContainer from '@/components/Toast/ToastContainer.vue'
+import ApiPanel from '@/components/ApiPanel/ApiPanel.vue'
 import { showToast } from '@/components/Toast/toast'
 import { connect, disconnect, useRosStatus } from '@/ros'
 import { useTopics, topicData } from '@/ros/useTopics'
@@ -222,6 +223,9 @@ onBeforeUnmount(() => {
       <span>ROS: {{ rosUrl }}</span>
       <span>电机: {{ currentProfile.numMotors }} | 型号: {{ currentProfile.name }}</span>
     </footer>
+
+    <!-- ===== 机器人内部 FastAPI 服务悬浮面板（复用已输入的 IP） ===== -->
+    <ApiPanel :ip="rosIp" />
   </div>
 </template>
 
