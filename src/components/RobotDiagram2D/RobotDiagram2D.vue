@@ -1,7 +1,8 @@
 /**
- * RobotDiagram2D —— 实时 Three.js 渲染 + 温度着色 + CSS 标签
+ * RobotDiagram2D -- Three.js 渲染 + 温度着色 + CSS 标签
  *
- * URDF 3D 模型实时渲染，关节温度通过 mesh 自发光 + CSS 标签双通道展示。
+ * URDF 模型以固定展示姿态渲染（不跟随实时关节角度），
+ * 关节温度通过 mesh 自发光 + CSS 标签双通道实时展示。
  * 固定正面 Orthographic 视角，悬停查看温度详情。
  */
 
@@ -9,12 +10,11 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import * as THREE from 'three'
 import URDFLoader from 'urdf-loader'
-import type { MotorState } from '@/models'
-import { G1_MOTOR_TO_URDF_JOINT, G1_MOTOR_DISPLAY_NAMES } from '@/models'
+import type { MotorState, RobotProfile } from '@/models'
 import { tempToColor } from '@/utils/tempColor'
-import urdfXml from '@/urdf/g1_29dof_rev_1_0_with_inspire_hand_FTP.urdf?raw'
 
 const props = defineProps<{
+  profile: RobotProfile
   motorState?: MotorState[]
   alarmTemp?: number
   width?: number
@@ -24,26 +24,6 @@ const props = defineProps<{
 const alarmThreshold = computed(() => props.alarmTemp ?? 70)
 const W = computed(() => props.width ?? 500)
 const H = computed(() => props.height ?? 680)
-
-// ============================================================
-// 每个关节标签的独立偏移量（逐个调！）
-// key = jointGroup.baseName, x/y = 像素偏移
-// ============================================================
-const labelOffsets: Record<string, { x: number; y: number }> = {
-  left_shoulder:  { x: 30, y: 0 },
-  right_shoulder: { x: -110,  y: 0 },
-  left_elbow:     { x: 20, y: 0 },
-  right_elbow:    { x: -100,  y: 0 },
-  left_wrist:     { x: 35, y: 0 },
-  right_wrist:    { x: -105,  y: 0 },
-  waist:          { x: -40,  y: 0 },
-  left_hip:       { x: 30, y: 10 },
-  right_hip:      { x: -100,  y: 10 },
-  left_knee:      { x: 30, y: 0 },
-  right_knee:     { x: -100,  y: 0 },
-  left_ankle:     { x: 30, y: 0 },
-  right_ankle:    { x: -100,  y: 0 },
-}
 
 // ============================================================
 // URDF XML 解析
@@ -132,8 +112,8 @@ const jointGroups = ref<JointGroup[]>([])
 function buildJointGroups(): void {
   const tmp = new Map<string, { indices: number[]; axes: string[]; links: string[]; displayName: string }>()
 
-  for (let i = 0; i < G1_MOTOR_TO_URDF_JOINT.length; i++) {
-    const urdfName = G1_MOTOR_TO_URDF_JOINT[i]
+  for (let i = 0; i < props.profile.urdfJoints.length; i++) {
+    const urdfName = props.profile.urdfJoints[i]
     const base = getBaseName(urdfName)
     if (!tmp.has(base)) tmp.set(base, { indices: [], axes: [], links: [], displayName: '' })
     const g = tmp.get(base)!
@@ -145,7 +125,7 @@ function buildJointGroups(): void {
     if (jd && !g.links.includes(jd.child)) g.links.push(jd.child)
 
     if (!g.displayName) {
-      const dn = G1_MOTOR_DISPLAY_NAMES[i] ?? urdfName
+      const dn = props.profile.displayNames[i] ?? urdfName
       g.displayName = dn.replace(/(俯仰|侧摆|偏航)$/, '') || dn
     }
   }
@@ -287,7 +267,7 @@ function projectLabels(): void {
     const sy = (-ndc.y * 0.5 + 0.5) * ch
 
     // 每个标签独立偏移量，在 labelOffsets 里逐个调
-    const off = labelOffsets[group.baseName] ?? { x: 0, y: 0 }
+    const off = props.profile.labelOffsets[group.baseName] ?? { x: 0, y: 0 }
 
     label.el.style.transform = `translate(${sx + off.x}px, ${sy - 10 + off.y}px)`
   }
@@ -300,7 +280,7 @@ function projectLabels(): void {
 const loading = ref(true)
 
 onMounted(async () => {
-  parseURDF(urdfXml)
+  parseURDF(props.profile.urdfXml)
   buildJointGroups()
 
   const w = W.value
@@ -362,24 +342,16 @@ onMounted(async () => {
   // Load URDF
   const loadingMgr = new THREE.LoadingManager()
   const urdfLoader = new URDFLoader(loadingMgr)
-  urdfLoader.workingPath = '/'
+  urdfLoader.workingPath = props.profile.urdfMeshBase
 
   try {
-    robot = urdfLoader.parse(urdfXml)
+    robot = urdfLoader.parse(props.profile.urdfXml)
     robot.rotation.set(-Math.PI / 2, 0, -Math.PI / 2)
     robot.scale.setScalar(0.78)
     scene.add(robot)
 
     // 设置展示用静态姿态（肘部微弯，不随真实关节数据变化）
-    const restPose: Record<string, number> = {
-      left_elbow_joint: 0.65,
-      right_elbow_joint: 0.65,
-      left_shoulder_pitch_joint: 0.25,
-      right_shoulder_pitch_joint: 0.25,
-      left_shoulder_roll_joint: 0.35,
-      right_shoulder_roll_joint: -0.35,
-    }
-    for (const [name, value] of Object.entries(restPose)) {
+    for (const [name, value] of Object.entries(props.profile.restPose)) {
       const j = (robot as any).joints?.[name]
       if (j?.setJointValue) j.setJointValue(value)
     }
@@ -470,9 +442,9 @@ watch(() => props.motorState, (motors) => {
   // 1) 收集 link 温度（不更新关节角度，保持静态姿态）
   const linkTemps = new Map<string, number>()
 
-  for (let i = 0; i < Math.min(motors.length, G1_MOTOR_TO_URDF_JOINT.length); i++) {
+  for (let i = 0; i < Math.min(motors.length, props.profile.urdfJoints.length); i++) {
     const m = motors[i]
-    const urdfName = G1_MOTOR_TO_URDF_JOINT[i]
+    const urdfName = props.profile.urdfJoints[i]
 
     // 温度
     if (m.mode === 0 || m.mode === 1) {

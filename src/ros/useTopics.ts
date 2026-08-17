@@ -1,24 +1,19 @@
 /**
- * ============================================================
- * useTopics —— 声明式 Topic 订阅 composable
- * ============================================================
+ * useTopics -- 声明式 Topic 订阅 composable
  *
- * 根据 src/ros/topics.ts 的配置自动订阅所有 enabled: true 的 Topic，
- * 并把处理后的数据存入一个响应式 store。
+ * 连接成功后调用 subscribeAll(profile)，按型号构建 /lowstate 订阅配置，
+ * 把处理后的数据存入响应式 store。
  *
- * 用法（在 App.vue 或任何组件里）：
- *   import { useTopics } from '@/ros/useTopics'
- *   const { data, subscribeAll } = useTopics()
- *   // data.motorState  = /lowstate 处理后的 { motors, jointAngles }
- *   // data.odom        = /odom 处理后的 { pose, twist }
- *   // data.battery     = /battery 处理后的 { voltage, ... }
- *
- * 新增 Topic 不需要改这个文件，只改 topics.ts 即可。
+ * 用法（在 App.vue 里）：
+ *   const { subscribeAll } = useTopics()
+ *   subscribeAll(currentProfile)
+ *   // topicData.motorState.motors = /lowstate 处理后的电机数组
  */
 
 import { reactive } from 'vue'
 import { subscribe } from './connection'
-import { TOPICS } from './topics'
+import { buildLowstateConfig } from './topics'
+import type { RobotProfile } from '@/models'
 
 // ============================================================
 // 响应式数据存储（key = TopicConfig.id）
@@ -39,10 +34,10 @@ const lastProcessTime = new Map<string, number>()
 
 export function useTopics() {
   /**
-   * 订阅所有 enabled: true 的 Topic
+   * 订阅 /lowstate（按 profile 构建配置）
    * 应在 ROS 连接成功后调用
    */
-  function subscribeAll(): void {
+  function subscribeAll(profile: RobotProfile): void {
     // 防止重复调用
     if (subscribed) {
       console.warn('[useTopics] 已经订阅过，跳过重复订阅')
@@ -50,34 +45,26 @@ export function useTopics() {
     }
     subscribed = true
 
-    const enabled = TOPICS.filter(t => t.enabled)
-    if (enabled.length === 0) {
-      console.log('[useTopics] 没有启用的 Topic，跳过订阅')
-      return
-    }
+    const config = buildLowstateConfig(profile)
+    if (!config.enabled) return
 
-    console.log(`[useTopics] 即将订阅 ${enabled.length} 个 Topic:`)
-    for (const t of enabled) {
-      console.log(`  - ${t.name} (${t.messageType})`)
-    }
+    console.log(`[useTopics] 即将订阅 ${config.name} (${config.messageType})`)
 
-    for (const config of enabled) {
-      subscribe(config.name, config.messageType, (msg: any) => {
-        // 节流：高频 topic 限制处理频率
-        if (config.throttleMs && config.throttleMs > 0) {
-          const now = Date.now()
-          const last = lastProcessTime.get(config.id) || 0
-          if (now - last < config.throttleMs) return
-          lastProcessTime.set(config.id, now)
-        }
+    subscribe(config.name, config.messageType, (msg: any) => {
+      // 节流：高频 topic 限制处理频率
+      if (config.throttleMs && config.throttleMs > 0) {
+        const now = Date.now()
+        const last = lastProcessTime.get(config.id) || 0
+        if (now - last < config.throttleMs) return
+        lastProcessTime.set(config.id, now)
+      }
 
-        try {
-          topicData[config.id] = config.process(msg)
-        } catch (e) {
-          console.error(`[useTopics] 处理 ${config.name} 消息出错:`, e)
-        }
-      }, config.throttle_rate)
-    }
+      try {
+        topicData[config.id] = config.process(msg)
+      } catch (e) {
+        console.error(`[useTopics] 处理 ${config.name} 消息出错:`, e)
+      }
+    }, config.throttle_rate)
   }
 
   /** 重置订阅状态（断线重连时调用） */
@@ -85,10 +72,19 @@ export function useTopics() {
     subscribed = false
   }
 
+  /** 清空所有 topic 数据（断开连接时调用） */
+  function clearTopicData(): void {
+    for (const key of Object.keys(topicData)) {
+      delete topicData[key]
+    }
+  }
+
   return {
-    /** 订阅所有启用的 Topic */
+    /** 订阅 /lowstate（按 profile） */
     subscribeAll,
     /** 重置订阅状态，供断开连接时调用 */
     resetSubscribed,
+    /** 清空所有 topic 数据，供断开连接时调用 */
+    clearTopicData,
   }
 }

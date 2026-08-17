@@ -158,7 +158,7 @@ export function getRos(): ROSLIB.Ros | null {
  * @param topicName   - 要订阅的 topic 名称，如 '/odom'、'/cmd_vel'
  * @param messageType - ROS 消息类型。传空字符串 '' 表示不限制类型（rosbridge 原样转发）
  * @param callback    - 收到消息时回调，msg 是解析好的 JS 对象
- * @param throttleRate - 可选，rosbridge 端限流（msg/s），降低机器⼈侧 CPU 开销
+ * @param throttleRate - 可选，rosbridge 端限流：消息最小间隔（毫秒），降低机器⼈侧 CPU 开销
  */
 export function subscribe(
   topicName: string,
@@ -257,7 +257,7 @@ export function callService(
 }
 
 // ============================================================
-// 7. 获取连接状态（在 .vue 里用）
+// 8. 获取连接状态（在 .vue 里用）
 // ============================================================
 
 /** 获取当前连接相关的响应式状态 */

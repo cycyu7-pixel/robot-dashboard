@@ -8,5 +8,5 @@
  */
 export { connect, disconnect, subscribe, publish, callService, useRosStatus, getRos } from './connection'
 export { useTopics, topicData } from './useTopics'
-export { TOPICS } from './topics'
+export { buildLowstateConfig, FSM_MODE_MAP, FSM_IDS } from './topics'
 export type { TopicConfig } from './topics'

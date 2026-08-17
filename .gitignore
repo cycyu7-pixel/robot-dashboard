@@ -21,6 +21,7 @@ lerna-debug.log*
 # 编辑器
 .vscode/
 .idea/
+.zcode/
 .DS_Store
 *.suo
 *.ntvs*

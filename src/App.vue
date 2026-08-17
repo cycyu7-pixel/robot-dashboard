@@ -1,6 +1,6 @@
 /**
  * ============================================================
- * App.vue —— 宇树 G1 机器人仪表盘主页面
+ * App.vue -- 宇树机器人仪表盘主页面（支持 G1 / H2 运行时切换）
  * ============================================================
  *
  * 布局：左 3D 人形机器人视图 | 右侧遥测图表
@@ -8,27 +8,35 @@
  * 怎么启动：
  *   1. 确保 rosbridge 已运行
  *   2. npm run dev
- *   3. 输入 IP 和端口，点「连接 ROS」
+ *   3. 选择型号（G1 / H2），输入 IP 和端口，点「连接 ROS」
  *
  * 改 ROS 地址：页面上直接输入
- * 改订阅 Topic：去 src/ros/topics.ts 的 TOPICS 数组加/改配置
- * 改关节映射：去 src/models/robot.ts 的 G1_JOINT_MAPPING 表
+ * 改订阅 Topic：去 src/ros/topics.ts 的 buildLowstateConfig
+ * 新增/修改型号：去 src/models/profiles/ 下对应 profile
+ * 急停 / 模式切换 / 温度告警：分别见 src/composables/ 下对应 composable
  */
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import * as ROSLIB from 'roslib'
+import { ref, computed, onBeforeUnmount } from 'vue'
 import RobotDiagram2D from '@/components/RobotDiagram2D/RobotDiagram2D.vue'
 import Telemetry from '@/components/Telemetry/Telemetry.vue'
-import { connect, disconnect, useRosStatus, callService, getRos } from '@/ros'
-import { useTopics, topicData } from '@/ros/useTopics'
-import { G1_JOINT_MAPPING, G1_MOTOR_JOINTS, G1_MOTOR_DISPLAY_NAMES } from '@/models'
-import { FSM_MODE_MAP, FSM_IDS } from '@/ros/topics'
 import ToastContainer from '@/components/Toast/ToastContainer.vue'
 import { showToast } from '@/components/Toast/toast'
+import { connect, disconnect, useRosStatus } from '@/ros'
+import { useTopics, topicData } from '@/ros/useTopics'
+import { ROBOT_PROFILES } from '@/models'
+import { useEStop } from '@/composables/useEStop'
+import { useSportService } from '@/composables/useSportService'
+import { useTempAlarm } from '@/composables/useTempAlarm'
 
 // ============================================================
-// 1. 连接配置（用户可在页面上修改）
+// 1. 型号选择 & 连接配置（用户可在页面上修改）
 // ============================================================
+
+const robotProfiles = ROBOT_PROFILES
+const selectedProfileId = ref('g1')
+const currentProfile = computed(() =>
+  robotProfiles.find(p => p.id === selectedProfileId.value) ?? robotProfiles[0]
+)
 
 const rosIp = ref('192.168.123.99')
 const rosPort = ref('9090')
@@ -46,24 +54,32 @@ const { connected, statusText, lastError } = useRosStatus()
 const alarmTemp = ref(70)
 
 /** 声明式订阅（Topic 配置见 src/ros/topics.ts） */
-const { subscribeAll, resetSubscribed } = useTopics()
+const { subscribeAll, resetSubscribed, clearTopicData } = useTopics()
 
 // 2D 视图容器尺寸
 const viewWidth = 500
 const viewHeight = 700
 
 // ============================================================
-// 3. 按钮操作
+// 3. 业务模块（急停 / 模式切换 / 温度告警）
+// ============================================================
+
+const { estopActive, handleEStop } = useEStop(currentProfile)
+const { sportFsmId, currentModeLabel, robotModes, modeMenuOpen, handleModeSelect } = useSportService(currentProfile)
+useTempAlarm(currentProfile, alarmTemp)
+
+// ============================================================
+// 4. 连接 / 断开
 // ============================================================
 
 /** 连接 ROS 并在连上后自动订阅所有启用的 Topic */
 function handleConnect(): void {
   connect(rosUrl.value, {
     onSuccess: () => {
-      showToast('机器人连接成功', 'success')
+      showToast(`${currentProfile.value.name} 连接成功`, 'success')
       // 等 rosbridge 就绪后批量订阅
       setTimeout(() => {
-        subscribeAll()
+        subscribeAll(currentProfile.value)
       }, 500)
     },
     onError: (msg) => {
@@ -79,191 +95,16 @@ function handleConnect(): void {
 function handleDisconnect(): void {
   disconnect()
   resetSubscribed()
-  // 清空 topicData 中所有 key
-  for (const key of Object.keys(topicData)) {
-    delete topicData[key]
-  }
+  clearTopicData()
 }
 
 // ============================================================
-// 4. 急停控制
-// ============================================================
-
-
-/** 急停状态 */
-const estopActive = ref(false)
-/** 急停轮询定时器 */
-let estopTimer: ReturnType<typeof setInterval> | null = null
-
-/** 触发急停 */
-async function handleEStop(): Promise<void> {
-  try {
-    await callService('/g1/trigger_estop', 'std_srvs/srv/Trigger', {})
-    showToast('急停已触发，机器人进入阻尼模式', 'error', 8000)
-  } catch (e: any) {
-    showToast(`急停失败：${e.message}`, 'error')
-  }
-}
-
-/** 查询急停状态 */
-async function handleQueryEStop(): Promise<void> {
-  try {
-    const res = await callService('/g1_emergency_stop_node/query_estop_state', 'std_srvs/srv/Trigger', {})
-    estopActive.value = res.estop_active === true || res.estop_active === 'true'
-  } catch (e: any) {
-    console.warn('[急停] 查询失败:', e.message)
-  }
-}
-
-// ============================================================
-// 5. 模式切换 & 运动服务（unitree_api/msg/Request）
-// ============================================================
-
-/** FSM ID → 中文名 */
-const currentModeLabel = computed(() => {
-  return FSM_MODE_MAP[sportFsmId.value] ?? `模式${sportFsmId.value}`
-})
-
-/** 运动服务 FSM ID（来自 API 响应） */
-const sportFsmId = ref(0)
-
-/** 可选模式列表 */
-const robotModes = FSM_IDS
-
-/** 模式菜单是否打开 */
-const modeMenuOpen = ref(false)
-
-const API_IDS = {
-  GET_FSM_ID: 7001,
-  SET_FSM_ID: 7101,
-}
-
-let requestTopic: ROSLIB.Topic | null = null
-let responseTopic: ROSLIB.Topic | null = null
-
-function initSportService(): void {
-  const ros = getRos()
-  if (!ros) return
-
-  requestTopic = new ROSLIB.Topic({
-    ros,
-    name: '/api/sport/request',
-    messageType: 'unitree_api/msg/Request',
-  })
-
-  responseTopic = new ROSLIB.Topic({
-    ros,
-    name: '/api/sport/response',
-    messageType: 'unitree_api/msg/Response',
-  })
-
-  responseTopic.subscribe((msg: any) => {
-    for (const key of ['data', 'datas', 'parameter']) {
-      const val = msg?.[key]
-      if (val !== undefined && val !== null) {
-        if (typeof val === 'string') {
-          try {
-            const parsed = JSON.parse(val)
-            if (parsed?.data !== undefined) sportFsmId.value = Number(parsed.data)
-          } catch {}
-        } else if (typeof val === 'number') {
-          sportFsmId.value = val
-        } else if (typeof val === 'object' && val?.data !== undefined) {
-          sportFsmId.value = Number(val.data)
-        }
-      }
-    }
-  })
-}
-
-function sendRequest(request: object): void {
-  if (!requestTopic) return
-  requestTopic.publish(request)
-}
-
-function queryFsmId(): void {
-  sendRequest({
-    header: { identity: { api_id: API_IDS.GET_FSM_ID } },
-  })
-}
-
-function handleModeSelect(mode: typeof robotModes[0]): void {
-  modeMenuOpen.value = false
-  showToast(`切换至「${mode.label}」模式`, 'info')
-  sendRequest({
-    header: { identity: { api_id: API_IDS.SET_FSM_ID } },
-    parameter: JSON.stringify({ data: mode.id }),
-  })
-  setTimeout(() => queryFsmId(), 1000)
-}
-
-function handleDocClick(e: MouseEvent): void {
-  const target = e.target as HTMLElement
-  if (!target.closest('.mode-switch')) {
-    modeMenuOpen.value = false
-  }
-}
-
-watch(modeMenuOpen, (val) => {
-  if (val) {
-    document.addEventListener('click', handleDocClick)
-    queryFsmId()
-  } else {
-    document.removeEventListener('click', handleDocClick)
-  }
-})
-
-// 连接后初始化运动服务 & 查询当前模式
-watch(connected, (val) => {
-  if (val) {
-    handleQueryEStop()
-    estopTimer = setInterval(handleQueryEStop, 3000)
-    initSportService()
-    queryFsmId()
-  } else if (estopTimer) {
-    clearInterval(estopTimer)
-    estopTimer = null
-    estopActive.value = false
-  }
-})
-
-// ============================================================
-// 6. 温度告警 toast
-// ============================================================
-
-/** 已触发过告警的关节（去重，温度回落自动清除） */
-const alertedJoints = new Set<string>()
-
-watch(() => topicData.motorState?.motors, (motors) => {
-  if (!motors || motors.length === 0) return
-  const threshold = alarmTemp.value
-  for (let i = 0; i < Math.min(motors.length, G1_MOTOR_JOINTS.length); i++) {
-    const m = motors[i]
-    if (m.mode !== 0 && m.mode !== 1) continue
-    const temp = m.temperature?.[0] ?? 0
-    const name = G1_MOTOR_JOINTS[i]
-    const display = G1_MOTOR_DISPLAY_NAMES[i] ?? name
-    if (temp > threshold && !alertedJoints.has(name)) {
-      alertedJoints.add(name)
-      showToast(`${display} 电机过热: ${temp.toFixed(1)}°C`, 'error', 6000)
-    }
-    if (temp <= threshold) {
-      alertedJoints.delete(name)
-    }
-  }
-}, { deep: false })
-
-// ============================================================
-// 7. 清理
+// 5. 清理
 // ============================================================
 
 onBeforeUnmount(() => {
-  if (estopTimer) clearInterval(estopTimer)
   disconnect()
 })
-
-// 调试：浏览器控制台可直接访问 __topicData
-;(window as any).__topicData = topicData
 </script>
 
 <template>
@@ -271,9 +112,14 @@ onBeforeUnmount(() => {
     <ToastContainer />
     <!-- ===== 顶部导航栏 ===== -->
     <header class="topbar">
-      <h1 class="title">🤖 unitree-G1-dashboard</h1>
+      <h1 class="title">🤖 {{ currentProfile.name }}</h1>
 
       <div class="status-area">
+        <!-- 型号选择（连接前） -->
+        <select v-if="!connected" v-model="selectedProfileId" class="input-profile" title="选择机器人型号">
+          <option v-for="p in robotProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+        </select>
+
         <!-- 报警温度 -->
         <span v-if="!connected" class="alarm-label">报警:</span>
         <input
@@ -289,8 +135,8 @@ onBeforeUnmount(() => {
         <span class="status-text">{{ statusText }}</span>
         <span v-if="lastError" class="error-text">（{{ lastError }}）</span>
 
-        <!-- 模式切换（仅连接后可用） -->
-        <div v-if="connected" class="mode-switch">
+        <!-- 模式切换（仅支持控制的型号 + 连接后） -->
+        <div v-if="connected && currentProfile.enableControl" class="mode-switch">
           <button class="btn-mode" @click.stop="modeMenuOpen = !modeMenuOpen" title="切换机器人模式">
             <span class="mode-indicator" :class="'mode-' + sportFsmId"></span>
             {{ currentModeLabel }}
@@ -312,9 +158,9 @@ onBeforeUnmount(() => {
           </Transition>
         </div>
 
-        <!-- 急停按钮（仅连接后可用） -->
+        <!-- 急停按钮（仅支持控制的型号 + 连接后） -->
         <button
-          v-if="connected"
+          v-if="connected && currentProfile.enableControl"
           class="btn-estop"
           :class="{ active: estopActive }"
           @click="handleEStop"
@@ -357,6 +203,8 @@ onBeforeUnmount(() => {
     <main class="main">
       <section class="left-panel">
         <RobotDiagram2D
+          :key="currentProfile.id"
+          :profile="currentProfile"
           :motor-state="topicData.motorState?.motors"
           :alarm-temp="alarmTemp"
           :width="viewWidth"
@@ -365,14 +213,14 @@ onBeforeUnmount(() => {
       </section>
 
       <aside class="right-panel">
-        <Telemetry :motor-state="topicData.motorState?.motors" />
+        <Telemetry :key="currentProfile.id" :profile="currentProfile" :motor-state="topicData.motorState?.motors" />
       </aside>
     </main>
 
     <!-- ===== 底部状态栏 ===== -->
     <footer class="bottombar">
       <span>ROS: {{ rosUrl }}</span>
-      <span>电机: {{ Object.keys(topicData.motorState?.jointAngles ?? {}).length }} | 2D 关节: {{ G1_JOINT_MAPPING.length }}</span>
+      <span>电机: {{ currentProfile.numMotors }} | 型号: {{ currentProfile.name }}</span>
     </footer>
   </div>
 </template>
@@ -438,13 +286,28 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-/* ---------- 按钮 ---------- */
+/* ---------- 输入框 ---------- */
 .btn {
   padding: 6px 16px;
   border: none;
   border-radius: 4px;
   font-size: 13px;
   cursor: pointer;
+}
+
+.input-profile {
+  padding: 5px 8px;
+  border: 1px solid #3a5070;
+  border-radius: 4px;
+  background: #0f1a2a;
+  color: #ecf0f1;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.input-profile:focus {
+  border-color: #3498db;
+  outline: none;
 }
 
 .input-ip {

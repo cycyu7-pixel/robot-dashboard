@@ -6,22 +6,32 @@ import { join, resolve, dirname, extname } from 'node:path'
 import type { Plugin, Connect } from 'vite'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const MESHES_SRC = resolve(__dirname, 'src/urdf/meshes')
 
 /**
- * 提供 URDF 网格（STL）文件的 Vite 插件
- * - 开发模式：通过中间件提供 /meshes/xxx.STL
- * - 生产构建：复制到 dist/meshes/
+ * mesh 目录映射：URL 前缀 -> 本地源目录
+ * - dev 模式：中间件按请求路径前缀查找对应源目录并提供文件
+ * - 生产构建：把每个源目录复制到 dist 下对应路径
+ *
+ * 新增型号的 mesh：在此数组加一项 { urlPrefix, srcDir }，
+ * 并在对应 profile 里把 urdfMeshBase 设为该 urlPrefix。
  */
+const MESH_DIRS: { urlPrefix: string; srcDir: string }[] = [
+  { urlPrefix: '/meshes/', srcDir: resolve(__dirname, 'src/urdf/meshes') },       // G1
+  { urlPrefix: '/h2/meshes/', srcDir: resolve(__dirname, 'src/urdf/h2/meshes') }, // H2
+]
+
 function serveMeshes(): Plugin {
   return {
     name: 'serve-meshes',
     configureServer(server) {
-      // 开发模式中间件
-      server.middlewares.use('/meshes', ((req, res, next) => {
-        const filename = req.url?.split('?')[0] ?? ''
+      // dev 模式中间件：按 URL 前缀匹配源目录
+      server.middlewares.use(((req, res, next) => {
+        const url = req.url?.split('?')[0] ?? ''
+        const entry = MESH_DIRS.find(m => url.startsWith(m.urlPrefix))
+        if (!entry) { next(); return }
+        const filename = url.slice(entry.urlPrefix.length)
         if (!filename) { next(); return }
-        const filePath = join(MESHES_SRC, filename)
+        const filePath = join(entry.srcDir, filename)
         if (!existsSync(filePath)) { next(); return }
         const ext = extname(filename).toLowerCase()
         const mime: Record<string, string> = {
@@ -34,11 +44,14 @@ function serveMeshes(): Plugin {
       }) as Connect.NextHandleFunction)
     },
     closeBundle() {
-      // 生产构建：复制 meshes 到 dist
-      const outDir = resolve(__dirname, 'dist/meshes')
-      if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true })
-      copyDirSync(MESHES_SRC, outDir)
-      console.log(`[serve-meshes] 已复制网格文件到 ${outDir}`)
+      // 生产构建：复制每个 mesh 目录到 dist 对应路径
+      for (const { urlPrefix, srcDir } of MESH_DIRS) {
+        if (!existsSync(srcDir)) continue
+        const outDir = resolve(__dirname, 'dist', urlPrefix.replace(/^\/|\/$/g, ''))
+        if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true })
+        copyDirSync(srcDir, outDir)
+        console.log(`[serve-meshes] 已复制 ${srcDir} -> ${outDir}`)
+      }
     },
   }
 }
