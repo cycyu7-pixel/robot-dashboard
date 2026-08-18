@@ -3,12 +3,12 @@
  * ApiPanel -- 机器人内部 FastAPI 服务悬浮面板（隐藏式菜单）
  * ============================================================
  *
- * 右下角悬浮按钮（可拖动），点击展开/收起面板。面板里是几个「流程功能」
- * 占位卡片，每个卡片调用 FastAPI 对应接口，结果直接显示在卡片内，失败用
- * Toast 提示。
+ * 右下角悬浮按钮（可拖动），点击展开/收起面板。面板按功能分组：
+ *   服务状态 / 机器人控制 / AGV 调度 / EPC 条码
+ * 每个卡片调用 FastAPI 对应接口（见 src/api/index.ts），
+ * 结果以 JSON 展示在卡片内，失败用 Toast 提示。
  *
- * ★ 占位实现：接口路径在 src/api/index.ts 里，等拿到真实接口清单
- *   只改那里即可，这里不用动。
+ * 接口约定：统一 Result 包装已在 src/api/client.ts 解包。
  *
  * 用法（在 App.vue）：传入 ip 复用顶栏输入的机器人 IP，
  *   FastAPI 地址 = http://IP:18800（端口见 src/api/client.ts）
@@ -30,25 +30,21 @@ const busy = ref<Record<string, boolean>>({})
 /** 各卡片查询结果（JSON 字符串展示） */
 const results = ref<Record<string, string>>({})
 
-/** 启动任务输入的任务 id */
-const taskId = ref('')
+// ---------- AGV 呼叫入参 ----------
+const agvWorkstation = ref('W03')
+const agvPodCategory = ref('2')
 
-/** 每张卡片一个操作名 -> 接口调用，便于统一管理 loading/结果 */
-const actions: Record<string, (api: FastApi) => Promise<unknown>> = {
-  device: (api) => api.getDeviceInfo(),
-  task: (api) => api.getTaskStatus(),
-  start: (api) => api.startTask(taskId.value || 'default'),
-  stop: (api) => api.stopTask(),
-  logs: (api) => api.getLogs(),
-}
+// ---------- AGV 返库入参 ----------
+const agvPodNo = ref('')
+const agvType = ref('FK')
 
-async function run(key: string): Promise<void> {
+/** 统一执行：loading + 结果展示 + 错误 Toast。每次请求用当前 IP，改 IP 自动跟随 */
+async function run(key: string, fn: (api: FastApi) => Promise<unknown>): Promise<void> {
   if (busy.value[key]) return
   busy.value = { ...busy.value, [key]: true }
   try {
-    // 每次请求用当前 IP 创建客户端，用户改 IP 后自动跟随
     const api = createFastApi(props.ip)
-    const data = await actions[key](api)
+    const data = await fn(api)
     results.value = { ...results.value, [key]: JSON.stringify(data, null, 2) }
   } catch (e: any) {
     showToast(`请求失败：${e?.message ?? e}`, 'error')
@@ -57,6 +53,27 @@ async function run(key: string): Promise<void> {
     busy.value = { ...busy.value, [key]: false }
   }
 }
+
+// ---------- 各功能动作 ----------
+const doAlive = () => run('alive', (api) => api.alive())
+const doEstop = () => run('estop', (api) => api.triggerEstop())
+const doAgvCall = () =>
+  run('agvCall', (api) =>
+    api.callAgv({
+      workstation: agvWorkstation.value || undefined,
+      podCategory: agvPodCategory.value || undefined,
+    })
+  )
+const doAgvReturn = () =>
+  run('agvReturn', (api) =>
+    api.agvReturn({
+      podNo: agvPodNo.value || undefined,
+      type: agvType.value || undefined,
+    })
+  )
+const doAgvCurrent = () => run('agvCurrent', (api) => api.getAgvCurrent())
+const doEpcScan = () => run('epcScan', (api) => api.startEpcScan())
+const doEpcCurrent = () => run('epcCurrent', (api) => api.getEpcCurrent())
 
 // ============================================================
 // 悬浮按钮拖动定位
@@ -204,60 +221,90 @@ watch(open, (val) => {
         </header>
 
         <div class="panel-body">
-          <!-- 设备信息 -->
+          <!-- ===== 服务状态 ===== -->
+          <div class="section-title">服务状态</div>
           <div class="card">
             <div class="card-row">
-              <span class="card-title">设备信息</span>
-              <button class="btn-mini" :disabled="busy.device" @click="run('device')">
-                {{ busy.device ? '查询中…' : '查询' }}
+              <span class="card-title">节点存活</span>
+              <button class="btn-mini" :disabled="busy.alive" @click="doAlive">
+                {{ busy.alive ? '检查中…' : '检查' }}
               </button>
             </div>
-            <pre v-if="results.device" class="result">{{ results.device }}</pre>
+            <pre v-if="results.alive" class="result">{{ results.alive }}</pre>
           </div>
 
-          <!-- 任务状态 -->
+          <!-- ===== 机器人控制 ===== -->
+          <div class="section-title">机器人控制</div>
           <div class="card">
             <div class="card-row">
-              <span class="card-title">任务状态</span>
-              <button class="btn-mini" :disabled="busy.task" @click="run('task')">
-                {{ busy.task ? '查询中…' : '查询' }}
+              <span class="card-title">触发急停</span>
+              <button class="btn-mini danger" :disabled="busy.estop" @click="doEstop">
+                {{ busy.estop ? '触发中…' : '急停' }}
               </button>
             </div>
-            <pre v-if="results.task" class="result">{{ results.task }}</pre>
+            <pre v-if="results.estop" class="result">{{ results.estop }}</pre>
           </div>
 
-          <!-- 启动任务 -->
+          <!-- ===== AGV 调度 ===== -->
+          <div class="section-title">AGV 调度</div>
           <div class="card">
             <div class="card-row">
-              <span class="card-title">启动任务</span>
-              <button class="btn-mini" :disabled="busy.start" @click="run('start')">
-                {{ busy.start ? '启动中…' : '启动' }}
+              <span class="card-title">呼叫 AGV 到工位</span>
+              <button class="btn-mini" :disabled="busy.agvCall" @click="doAgvCall">
+                {{ busy.agvCall ? '呼叫中…' : '呼叫' }}
               </button>
             </div>
-            <input v-model="taskId" class="input-task" placeholder="任务 id（默认 default）" />
-            <pre v-if="results.start" class="result">{{ results.start }}</pre>
+            <div class="input-row">
+              <input v-model="agvWorkstation" class="input-task" placeholder="工位" />
+              <input v-model="agvPodCategory" class="input-task" placeholder="货架类别" />
+            </div>
+            <pre v-if="results.agvCall" class="result">{{ results.agvCall }}</pre>
           </div>
 
-          <!-- 停止任务 -->
           <div class="card">
             <div class="card-row">
-              <span class="card-title">停止任务</span>
-              <button class="btn-mini danger" :disabled="busy.stop" @click="run('stop')">
-                {{ busy.stop ? '停止中…' : '停止' }}
+              <span class="card-title">AGV 返库</span>
+              <button class="btn-mini" :disabled="busy.agvReturn" @click="doAgvReturn">
+                {{ busy.agvReturn ? '返库中…' : '返库' }}
               </button>
             </div>
-            <pre v-if="results.stop" class="result">{{ results.stop }}</pre>
+            <div class="input-row">
+              <input v-model="agvPodNo" class="input-task" placeholder="货架号（留空用缓存）" />
+              <input v-model="agvType" class="input-task" placeholder="类型" />
+            </div>
+            <pre v-if="results.agvReturn" class="result">{{ results.agvReturn }}</pre>
           </div>
 
-          <!-- 最近日志 -->
           <div class="card">
             <div class="card-row">
-              <span class="card-title">最近日志</span>
-              <button class="btn-mini" :disabled="busy.logs" @click="run('logs')">
-                {{ busy.logs ? '拉取中…' : '拉取' }}
+              <span class="card-title">当前 AGV 容器</span>
+              <button class="btn-mini" :disabled="busy.agvCurrent" @click="doAgvCurrent">
+                {{ busy.agvCurrent ? '查询中…' : '查询' }}
               </button>
             </div>
-            <pre v-if="results.logs" class="result log">{{ results.logs }}</pre>
+            <pre v-if="results.agvCurrent" class="result">{{ results.agvCurrent }}</pre>
+          </div>
+
+          <!-- ===== EPC 条码 ===== -->
+          <div class="section-title">EPC 条码</div>
+          <div class="card">
+            <div class="card-row">
+              <span class="card-title">发起 EPC 扫描</span>
+              <button class="btn-mini" :disabled="busy.epcScan" @click="doEpcScan">
+                {{ busy.epcScan ? '扫描中…' : '扫描' }}
+              </button>
+            </div>
+            <pre v-if="results.epcScan" class="result">{{ results.epcScan }}</pre>
+          </div>
+
+          <div class="card">
+            <div class="card-row">
+              <span class="card-title">当前 EPC 条码</span>
+              <button class="btn-mini" :disabled="busy.epcCurrent" @click="doEpcCurrent">
+                {{ busy.epcCurrent ? '查询中…' : '查询' }}
+              </button>
+            </div>
+            <pre v-if="results.epcCurrent" class="result">{{ results.epcCurrent }}</pre>
           </div>
         </div>
       </section>
@@ -362,6 +409,15 @@ watch(open, (val) => {
   gap: 10px;
 }
 
+/* ---------- 分组标题 ---------- */
+.section-title {
+  font-size: 11px;
+  color: #7f8c8d;
+  letter-spacing: 1px;
+  margin-top: 4px;
+  text-transform: uppercase;
+}
+
 /* ---------- 功能卡片 ---------- */
 .card {
   background: #0f1a2a;
@@ -414,10 +470,16 @@ watch(open, (val) => {
   color: #fff;
 }
 
-.input-task {
-  width: 100%;
-  padding: 5px 8px;
+.input-row {
+  display: flex;
+  gap: 8px;
   margin-bottom: 8px;
+}
+
+.input-task {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
   border: 1px solid #3a5070;
   border-radius: 4px;
   background: #0f1a2a;
@@ -444,10 +506,6 @@ watch(open, (val) => {
   color: #7ee787;
   white-space: pre-wrap;
   word-break: break-all;
-}
-
-.result.log {
-  color: #bdc3c7;
 }
 
 /* ---------- 展开动画 ---------- */

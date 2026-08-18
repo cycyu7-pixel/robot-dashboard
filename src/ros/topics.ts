@@ -1,13 +1,12 @@
 /**
  * ============================================================
- * Topic 声明式配置
+ * FSM 模式映射 —— 运动服务（sport）模式 id -> 中文名
  * ============================================================
  *
- * /lowstate 的订阅配置由 buildLowstateConfig(profile) 按型号动态构建。
- * process 只提取原始 motor_state 数组，关节名/顺序映射由各组件按 profile 自行处理。
+ * 实时数据（/lowstate）已改由 FastAPI 数据源（src/api/lowstate.ts）提供，
+ * 不再有 topic 订阅配置；本文件只保留模式 id 与中文名的映射，
+ * 供模式切换下拉列表与状态栏展示使用。
  */
-
-import type { RobotProfile } from '@/models'
 
 /** FSM ID -> 模式名映射（宇树 G1） */
 export const FSM_MODE_MAP: Record<number, string> = {
@@ -27,46 +26,3 @@ export const FSM_IDS = Object.entries(FSM_MODE_MAP).map(([id, label]) => ({
   id: Number(id),
   label,
 }))
-
-// ============================================================
-// 单个 Topic 配置
-// ============================================================
-
-export interface TopicConfig {
-  /** ROS Topic 名称，如 '/lowstate' */
-  name: string
-  /** ROS 消息类型，如 'unitree_hg/msg/LowState' */
-  messageType: string
-  /** 是否启用：连接 ROS 后自动订阅 */
-  enabled: boolean
-  /** 数据在 dataStore 里的键名（全局唯一），页面通过 dataStore[id] 取值 */
-  id: string
-  /** 把原始 ROS 消息转为业务对象，返回的数据会存入 dataStore[id] */
-  process: (msg: any) => any
-  /** 节流：限制处理频率，单位 ms（如 50 = 20fps），高频 topic 用 */
-  throttleMs?: number
-  /** rosbridge 端限流（msg/s），降低机器人侧 CPU */
-  throttle_rate?: number
-}
-
-/**
- * 根据型号构建 /lowstate 订阅配置
- * process 只提取原始 motor_state 数组，关节名映射由消费侧按 profile 处理
- * 读取频率由 profile.lowstateRate 控制（rosbridge 端与前端同为该频率）
- */
-export function buildLowstateConfig(profile: RobotProfile): TopicConfig {
-  const intervalMs = Math.round(1000 / profile.lowstateRate)
-  return {
-    name: profile.ros.lowstateTopic,
-    messageType: profile.ros.lowstateMsgType,
-    enabled: true,
-    id: 'motorState',
-    process: (msg: any) => ({
-      motors: msg.motor_state ?? msg.motorState ?? [],
-    }),
-    /** 前端处理节流，与读取频率一致 */
-    throttleMs: intervalMs,
-    /** rosbridge 端限流：消息最小间隔（毫秒） */
-    throttle_rate: intervalMs,
-  }
-}

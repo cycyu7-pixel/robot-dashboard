@@ -1,12 +1,10 @@
 /**
- * ROS 模块统一导出
+ * ROS 模块统一导出（已去掉 rosbridge / roslib）
  *
- * 用法：
- *   import { connect, subscribe, useRosStatus } from '@/ros'
- *   import { useTopics, topicData } from '@/ros/useTopics'
- *   import { TOPICS } from '@/ros/topics'
+ * 实时数据改由 FastAPI 数据源提供：
+ *   import { connectLowstate, disconnectLowstate, useLowstateStatus } from '@/api/lowstate'
+ *   import { topicData } from '@/ros/useTopics'
+ *   import { FSM_MODE_MAP } from '@/ros/topics'
  */
-export { connect, disconnect, subscribe, publish, callService, useRosStatus, getRos } from './connection'
-export { useTopics, topicData } from './useTopics'
-export { buildLowstateConfig, FSM_MODE_MAP, FSM_IDS } from './topics'
-export type { TopicConfig } from './topics'
+export { topicData, useTopics } from './useTopics'
+export { FSM_MODE_MAP, FSM_IDS } from './topics'

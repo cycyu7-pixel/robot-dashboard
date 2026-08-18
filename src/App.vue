@@ -6,12 +6,12 @@
  * 布局：左 3D 人形机器人视图 | 右侧遥测图表
  *
  * 怎么启动：
- *   1. 确保 rosbridge 已运行
+ *   1. 机器人内 FastAPI 服务已运行（bsd-unitree-controller）
  *   2. npm run dev
- *   3. 选择型号（G1 / H2），输入 IP 和端口，点「连接 ROS」
+ *   3. 选择型号（G1 / H2），输入机器人 IP，点「连接」
  *
- * 改 ROS 地址：页面上直接输入
- * 改订阅 Topic：去 src/ros/topics.ts 的 buildLowstateConfig
+ * 改机器人地址：页面上直接输入
+ * 实时数据源：src/api/lowstate.ts（FastAPI WS /lowstate，不再依赖 rosbridge）
  * 新增/修改型号：去 src/models/profiles/ 下对应 profile
  * 急停 / 模式切换 / 温度告警：分别见 src/composables/ 下对应 composable
  */
@@ -22,7 +22,9 @@ import Telemetry from '@/components/Telemetry/Telemetry.vue'
 import ToastContainer from '@/components/Toast/ToastContainer.vue'
 import ApiPanel from '@/components/ApiPanel/ApiPanel.vue'
 import { showToast } from '@/components/Toast/toast'
-import { connect, disconnect, useRosStatus } from '@/ros'
+import { connectLowstate, disconnectLowstate, useLowstateStatus } from '@/api/lowstate'
+import { API_PORT } from '@/api/client'
+import { useRobotAddress } from '@/config/address'
 import { useTopics, topicData } from '@/ros/useTopics'
 import { ROBOT_PROFILES } from '@/models'
 import { useEStop } from '@/composables/useEStop'
@@ -39,23 +41,23 @@ const currentProfile = computed(() =>
   robotProfiles.find(p => p.id === selectedProfileId.value) ?? robotProfiles[0]
 )
 
-const rosIp = ref('192.168.123.99')
-const rosPort = ref('9090')
+/** 机器人地址（解析优先级：URL 参数 > localStorage > config.json > 代码默认） */
+const { ip: rosIp, remember } = useRobotAddress()
 
-/** rosbridge WebSocket 地址，由 IP + 端口拼接 */
-const rosUrl = computed(() => `ws://${rosIp.value}:${rosPort.value}`)
+/** 机器人内 FastAPI 服务地址（端口取 client.ts 的 API_PORT） */
+const apiUrl = computed(() => `http://${rosIp.value}:${API_PORT}`)
 
 // ============================================================
-// 2. ROS 状态 & 数据
+// 2. 数据源状态 & 数据
 // ============================================================
 
-const { connected, statusText, lastError } = useRosStatus()
+const { connected, statusText, lastError } = useLowstateStatus()
 
 /** 电机报警温度（℃），用户可调 */
 const alarmTemp = ref(70)
 
-/** 声明式订阅（Topic 配置见 src/ros/topics.ts） */
-const { subscribeAll, resetSubscribed, clearTopicData } = useTopics()
+/** 实时数据清理工具（数据由 src/api/lowstate.ts 写入） */
+const { clearTopicData } = useTopics()
 
 // 2D 视图容器尺寸
 const viewWidth = 500
@@ -65,26 +67,28 @@ const viewHeight = 700
 // 3. 业务模块（急停 / 模式切换 / 温度告警）
 // ============================================================
 
-const { estopActive, handleEStop } = useEStop(currentProfile)
-const { sportFsmId, currentModeLabel, robotModes, modeMenuOpen, handleModeSelect } = useSportService(currentProfile)
+const { estopActive, handleEStop } = useEStop(currentProfile, rosIp)
+const { sportFsmId, currentModeLabel, robotModes, modeMenuOpen, handleModeSelect } = useSportService(currentProfile, rosIp)
 useTempAlarm(currentProfile, alarmTemp)
 
 // ============================================================
 // 4. 连接 / 断开
 // ============================================================
 
-/** 连接 ROS 并在连上后自动订阅所有启用的 Topic */
+/** 连接机器人内 FastAPI 数据源（/lowstate 实时流） */
 function handleConnect(): void {
-  connect(rosUrl.value, {
-    onSuccess: () => {
+  if (!rosIp.value.trim()) {
+    showToast('请先填写机器人 IP 地址', 'error')
+    return
+  }
+  // 记住本次使用的 IP：写入 localStorage（刷新不丢）
+  remember(rosIp.value)
+  connectLowstate(rosIp.value, {
+    onOpen: () => {
       showToast(`${currentProfile.value.name} 连接成功`, 'success')
-      // 等 rosbridge 就绪后批量订阅
-      setTimeout(() => {
-        subscribeAll(currentProfile.value)
-      }, 500)
     },
     onError: (msg) => {
-      showToast(`连接失败：${msg}`, 'error')
+      showToast(msg, 'error')
     },
     onClose: () => {
       showToast('连接已断开', 'info')
@@ -92,10 +96,9 @@ function handleConnect(): void {
   })
 }
 
-/** 断开连接，清空所有 topic 数据 */
+/** 断开连接，清空所有实时数据 */
 function handleDisconnect(): void {
-  disconnect()
-  resetSubscribed()
+  disconnectLowstate()
   clearTopicData()
 }
 
@@ -104,7 +107,7 @@ function handleDisconnect(): void {
 // ============================================================
 
 onBeforeUnmount(() => {
-  disconnect()
+  disconnectLowstate()
 })
 </script>
 
@@ -170,20 +173,13 @@ onBeforeUnmount(() => {
           {{ estopActive ? '⚠ 急停中' : '急停' }}
         </button>
 
-        <!-- IP 和端口输入 -->
+        <!-- 机器人 IP 输入（FastAPI 端口固定，见 client.ts API_PORT） -->
         <input
           v-if="!connected"
           v-model="rosIp"
           class="input-ip"
-          placeholder="IP 地址"
+          placeholder="机器人 IP"
           title="机器人 IP 地址"
-        />
-        <input
-          v-if="!connected"
-          v-model="rosPort"
-          class="input-port"
-          placeholder="端口"
-          title="rosbridge 端口"
         />
 
         <!-- 连接 / 断开按钮 -->
@@ -192,7 +188,7 @@ onBeforeUnmount(() => {
           class="btn btn-connect"
           @click="handleConnect"
         >
-          连接 ROS
+          连接
         </button>
         <button v-else class="btn btn-disconnect" @click="handleDisconnect">
           断开连接
@@ -220,7 +216,7 @@ onBeforeUnmount(() => {
 
     <!-- ===== 底部状态栏 ===== -->
     <footer class="bottombar">
-      <span>ROS: {{ rosUrl }}</span>
+      <span>API: {{ apiUrl }}</span>
       <span>电机: {{ currentProfile.numMotors }} | 型号: {{ currentProfile.name }}</span>
     </footer>
 
@@ -325,21 +321,6 @@ onBeforeUnmount(() => {
 }
 
 .input-ip:focus {
-  border-color: #3498db;
-  outline: none;
-}
-
-.input-port {
-  width: 60px;
-  padding: 5px 8px;
-  border: 1px solid #3a5070;
-  border-radius: 4px;
-  background: #0f1a2a;
-  color: #ecf0f1;
-  font-size: 12px;
-}
-
-.input-port:focus {
   border-color: #3498db;
   outline: none;
 }
